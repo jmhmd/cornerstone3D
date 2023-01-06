@@ -1,5 +1,5 @@
 import vtkVolume from '@kitware/vtk.js/Rendering/Core/Volume';
-
+import vtkCamera from '@kitware/vtk.js/Rendering/Core/Camera';
 import cache from '../cache';
 import ViewportType from '../enums/ViewportType';
 import Viewport from './Viewport';
@@ -53,22 +53,26 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
 
     const renderer = this.getRenderer();
 
-    const camera = vtkSlabCamera.newInstance();
-    renderer.setActiveCamera(camera);
+    let camera;
 
     switch (this.type) {
       case ViewportType.ORTHOGRAPHIC:
+        camera = vtkSlabCamera.newInstance();
         camera.setParallelProjection(true);
         break;
       case ViewportType.VOLUME_3D:
+        camera = vtkSlabCamera.newInstance();
         camera.setParallelProjection(true);
         break;
       case ViewportType.PERSPECTIVE:
+        camera = vtkSlabCamera.newInstance();
         camera.setParallelProjection(false);
         break;
       default:
         throw new Error(`Unrecognized viewport type: ${this.type}`);
     }
+
+    renderer.setActiveCamera(camera);
 
     this.initializeVolumeNewImageEventDispatcher();
   }
@@ -508,7 +512,7 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
      * isPerformingCoordinateTransformation is set to true.
      */
 
-    vtkCamera.setIsPerformingCoordinateTransformation(true);
+    vtkCamera.setIsPerformingCoordinateTransformation?.(true);
 
     const renderer = this.getRenderer();
     const offscreenMultiRenderWindow =
@@ -536,7 +540,7 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
       renderer
     );
 
-    vtkCamera.setIsPerformingCoordinateTransformation(false);
+    vtkCamera.setIsPerformingCoordinateTransformation?.(false);
 
     return [worldCoord[0], worldCoord[1], worldCoord[2]];
   };
@@ -574,7 +578,7 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
      * isPerformingCoordinateTransformation is set to true.
      */
 
-    vtkCamera.setIsPerformingCoordinateTransformation(true);
+    vtkCamera.setIsPerformingCoordinateTransformation?.(true);
 
     const renderer = this.getRenderer();
     const offscreenMultiRenderWindow =
@@ -601,7 +605,7 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
       canvasCoord[1] / devicePixelRatio,
     ];
 
-    vtkCamera.setIsPerformingCoordinateTransformation(false);
+    vtkCamera.setIsPerformingCoordinateTransformation?.(false);
 
     return canvasCoordWithDPR;
   };

@@ -300,7 +300,7 @@ class VolumeViewport extends BaseVolumeViewport {
       // we assume that the first two clipping plane of the mapper are always
       // the 'camera' clipping. Add clipping planes only if the actor is
       // a vtkVolume
-      if (!actorEntry.actor || !actorEntry.actor.isA('vtkVolume')) {
+      if (!actorEntry.actor) {
         return;
       }
       const mapper = actorEntry.actor.getMapper();

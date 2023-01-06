@@ -2,8 +2,10 @@ import {
   RenderingEngine,
   Types,
   Enums,
+  cache,
   setVolumesForViewports,
   volumeLoader,
+  CONSTANTS,
 } from '@cornerstonejs/core';
 import {
   initDemo,
@@ -11,6 +13,21 @@ import {
   setTitleAndDescription,
 } from '../../../../utils/demo/helpers';
 import * as cornerstoneTools from '@cornerstonejs/tools';
+import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
+import vtkPolyLine from '@kitware/vtk.js/Common/DataModel/Polyline';
+import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray';
+import vtkPoints from '@kitware/vtk.js/Common/Core/Points';
+import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
+import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
+import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction';
+import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
+import vtkSphereSource from '@kitware/vtk.js/Filters/Sources/SphereSource';
+import vtkLight from '@kitware/vtk.js/Rendering/Core/Light';
+
+import '@kitware/vtk.js/Rendering/Profiles/Geometry';
+import '@kitware/vtk.js/Rendering/Profiles/Volume';
+
+window.cache = cache;
 
 // This is for debugging purposes
 console.warn(
@@ -22,6 +39,7 @@ const {
   ToolGroupManager,
   StackScrollMouseWheelTool,
   ZoomTool,
+  TrackballRotateTool,
   Enums: csToolsEnums,
 } = cornerstoneTools;
 
@@ -85,6 +103,7 @@ async function run() {
 
   // Add tools to Cornerstone3D
   cornerstoneTools.addTool(LengthTool);
+  cornerstoneTools.addTool(TrackballRotateTool);
   cornerstoneTools.addTool(ZoomTool);
   cornerstoneTools.addTool(StackScrollMouseWheelTool);
 
@@ -94,12 +113,13 @@ async function run() {
 
   // Add the tools to the tool group and specify which volume they are pointing at
   toolGroup.addTool(LengthTool.toolName, { volumeId });
+  toolGroup.addTool(TrackballRotateTool.toolName);
   toolGroup.addTool(ZoomTool.toolName, { volumeId });
   toolGroup.addTool(StackScrollMouseWheelTool.toolName);
 
   // Set the initial state of the tools, here we set one tool active on left click.
   // This means left click will draw that tool.
-  toolGroup.setToolActive(LengthTool.toolName, {
+  toolGroup.setToolActive(TrackballRotateTool.toolName, {
     bindings: [
       {
         mouseButton: MouseBindings.Primary, // Left Click
@@ -192,11 +212,136 @@ async function run() {
 
   // Set the volume to load
   volume.load();
+  const viewportId = viewportIds[0];
+  const viewport = renderingEngine.getViewport(viewportIds[0]);
 
-  setVolumesForViewports(renderingEngine, [{ volumeId }], viewportIds);
+  setVolumesForViewports(
+    renderingEngine,
+    [{ volumeId }],
+    [viewportIds[0]]
+  ).then(() => {
+    // const filterActorUIDs = viewport.getActors().map((actor) => actor.uid);
+    // viewport.setBlendMode(Enums.BlendModes.MAXIMUM_INTENSITY_BLEND);
+    // viewport.setSlabThickness(5);
+
+    const volumeActor = renderingEngine
+      .getViewport(viewportId)
+      .getDefaultActor().actor;
+
+    // utilities.applyPreset(
+    //   volumeActor,
+    //   CONSTANTS.VIEWPORT_PRESETS.find((preset) => preset.name === 'CT-AAA')
+    // );
+
+    viewport.render();
+  });
 
   // Render the image
   renderingEngine.renderViewports(viewportIds);
+
+  setTimeout(() => {
+    addPolyData(viewport);
+    // addSphere(viewport);
+  }, 1000);
+}
+
+function addSphere(viewport) {
+  const { actor: sphereActor, mapper: sphereMapper } = getSphereActor({
+    center: [0, 0, -144],
+    radius: 50,
+    phiResolution: 30,
+    thetaResolution: 30,
+    opacity: 1,
+    edgeVisibility: true,
+  });
+
+  sphereActor.setMapper(sphereMapper);
+  viewport.addActor({ actor: sphereActor, uid: 'sphere' });
+
+  viewport.resetCamera();
+  viewport.render();
+}
+
+function addPolyData(viewport) {
+  const z = -140.0899965;
+  // z = 78.0;
+  const pointList = [
+    [-58.8541378715953, -80.2549051, z],
+    [7.293688182879407, -89.9825266, z],
+    [38.42207691439694, -38.42613276653691, z],
+    [-21.8891762, -1.461171147859858, z],
+    [-63.71794861089492, -36.48060847081706, z],
+  ];
+
+  const pointList1 = [
+    [1, -204, -141.0899965],
+    [66, -207, -141.0899965],
+    [89, -179, -141.0899965],
+    [8, -171, -141.0899965],
+    [-92, -186, -141.0899965],
+  ];
+
+  const points = vtkPoints.newInstance();
+  points.setData(Float32Array.from(pointList.flat()), 3);
+
+  const lines = vtkCellArray.newInstance();
+  lines.setData(Uint32Array.from([5, 0, 1, 2, 3, 4]), 3);
+
+  const polygon = vtkPolyData.newInstance();
+  polygon.setPoints(points);
+  polygon.setLines(lines);
+
+  const mapper1 = vtkMapper.newInstance();
+  mapper1.setInputData(polygon);
+
+  const actor1 = vtkActor.newInstance();
+  actor1.setMapper(mapper1);
+  actor1.getProperty().setLineWidth(10);
+  actor1.getProperty().setColor(0, 0.5, 0);
+
+  viewport.addActor({ actor: actor1, uid: 'polyData' });
+
+  viewport.resetCamera();
+  viewport.render();
+  // viewport.getVtkActiveCamera().elevation(-195);
+  // viewport.getVtkActiveCamera().roll(40);
+  // viewport.getVtkActiveCamera().yaw(20);
+
+  // const renderer = viewport.getRenderer();
+  // renderer.addActor(actor1);
+
+  window.viewport = viewport;
+}
+
+function getSphereActor({
+  center,
+  radius,
+  phiResolution,
+  thetaResolution,
+  opacity,
+  edgeVisibility,
+}) {
+  const sphereSource = vtkSphereSource.newInstance({
+    center,
+    radius,
+    phiResolution,
+    thetaResolution,
+  });
+
+  const actor = vtkActor.newInstance();
+  const mapper = vtkMapper.newInstance();
+
+  actor.getProperty().setEdgeVisibility(edgeVisibility);
+  actor.getProperty().setOpacity(opacity);
+
+  mapper.setInputConnection(sphereSource.getOutputPort());
+  actor.setMapper(mapper);
+  // actor.setForceTranslucent(true);
+
+  const polyData = sphereSource.getOutputData();
+  const data = polyData.getPoints().getData();
+
+  return { actor, data, mapper };
 }
 
 run();
