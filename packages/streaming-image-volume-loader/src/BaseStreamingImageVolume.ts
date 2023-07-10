@@ -29,6 +29,7 @@ export default class BaseStreamingImageVolume extends ImageVolume {
 
   loadStatus: {
     loaded: boolean;
+    partial: boolean;
     loading: boolean;
     cancelled: boolean;
     cachedFrames: Array<boolean>;
@@ -209,9 +210,23 @@ export default class BaseStreamingImageVolume extends ImageVolume {
    */
   public load = (
     callback: (...args: unknown[]) => void,
-    priority = 5
+    priority = 5,
+    progressive:
+      | undefined
+      | {
+          rangeType: 'bytes';
+          range: [number, number];
+        }
   ): void => {
     const { imageIds, loadStatus, numFrames } = this;
+
+    // Set image volume status to partial to denote a progressive load,
+    // empty caches
+    if (progressive) {
+      this.loadStatus.partial = true;
+      this.loadStatus.loaded = false;
+      this.loadStatus.cachedFrames = [];
+    }
 
     if (loadStatus.loading === true) {
       console.log(
@@ -240,13 +255,14 @@ export default class BaseStreamingImageVolume extends ImageVolume {
       this.loadStatus.callbacks.push(callback);
     }
 
-    this._prefetchImageIds(priority);
+    this._prefetchImageIds(priority, progressive);
   };
 
   protected getImageIdsRequests = (
     imageIds: string[],
     scalarData: Types.VolumeScalarData,
-    priority: number
+    priority: number,
+    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
   ) => {
     const { loadStatus } = this;
     const { cachedFrames } = loadStatus;
@@ -316,7 +332,9 @@ export default class BaseStreamingImageVolume extends ImageVolume {
 
       // Check if there is a cached image for the same imageURI (different
       // data loader scheme)
-      const cachedImage = cache.getCachedImageBasedOnImageURI(imageId);
+      const cachedImage = this.loadStatus.partial
+        ? undefined
+        : cache.getCachedImageBasedOnImageURI(imageId);
 
       // check if the load was cancelled while we were waiting for the image
       // if so we don't want to do anything
@@ -586,6 +604,7 @@ export default class BaseStreamingImageVolume extends ImageVolume {
           // and therefore doesn't have the scalingParameters
           scalingParameters,
         },
+        progressive,
       };
 
       // Use loadImage because we are skipping the Cornerstone Image cache
@@ -632,17 +651,23 @@ export default class BaseStreamingImageVolume extends ImageVolume {
    * @returns Array of requests including imageId of the request, its imageIdIndex,
    * options (targetBuffer and scaling parameters), and additionalDetails (volumeId)
    */
-  public getImageLoadRequests(_priority: number): any[] {
+  public getImageLoadRequests(
+    _priority: number,
+    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
+  ): any[] {
     throw new Error('Abstract method');
   }
 
-  private _prefetchImageIds(priority: number): void {
+  private _prefetchImageIds(
+    priority: number,
+    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
+  ): void {
     // Note: here is the correct location to set the loading flag
     // since getImageIdsRequest is just grabbing and building requests
     // and not actually executing them
     this.loadStatus.loading = true;
 
-    const requests = this.getImageLoadRequests(priority);
+    const requests = this.getImageLoadRequests(priority, progressive);
 
     requests.reverse().forEach((request) => {
       if (!request) {

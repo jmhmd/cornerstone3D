@@ -1,6 +1,8 @@
 import { xhrRequest } from '../internal/index';
 import findIndexOfString from './findIndexOfString';
 
+const partialRequests: { [key: string]: Uint8Array[] } = {};
+
 function findBoundary(header: string[]): string {
   for (let i = 0; i < header.length; i++) {
     if (header[i].substr(0, 2) === '--') {
@@ -32,19 +34,48 @@ function uint8ArrayToString(data, offset, length) {
 function getPixelData(
   uri: string,
   imageId: string,
-  mediaType = 'application/octet-stream'
+  mediaType = 'application/octet-stream',
+  progressive?: undefined | { rangeType: 'bytes'; range: [number, number] }
 ): Promise<any> {
-  const headers = {
+  const headers: { Accept: string; Range?: string } = {
     Accept: mediaType,
   };
+
+  if (progressive) {
+    if (progressive.rangeType === 'bytes')
+      headers.Range = `bytes=${progressive.range[0]}-${progressive.range[1]}`;
+  }
 
   return new Promise((resolve, reject) => {
     const loadPromise = xhrRequest(uri, imageId, headers);
     const { xhr } = loadPromise;
 
-    loadPromise.then(function (imageFrameAsArrayBuffer /* , xhr*/) {
+    loadPromise.then(async function (imageFrameAsArrayBuffer /* , xhr*/) {
       // request succeeded, Parse the multi-part mime response
-      const response = new Uint8Array(imageFrameAsArrayBuffer);
+      let response = new Uint8Array(imageFrameAsArrayBuffer);
+
+      if (partialRequests[imageId] && partialRequests[imageId].length > 0) {
+        const priorResponses = partialRequests[imageId];
+        const allResponses = [
+          ...priorResponses.map((arrayBuffer) => new Uint8Array(arrayBuffer)),
+          response,
+        ];
+        const totalLength = allResponses.reduce(
+          (prev, next) => prev + next.length,
+          0
+        );
+        partialRequests[imageId].push(response);
+        response = new Uint8Array(totalLength);
+        allResponses.forEach((r, i) =>
+          response.set(r, i > 0 ? allResponses[i - 1].length : 0)
+        );
+        console.log(
+          `Combined prior partial responses for imageid ${imageId}, for a total length of ${totalLength}.`
+        );
+      } else {
+        if (!partialRequests[imageId]) partialRequests[imageId] = [];
+        partialRequests[imageId].push(response);
+      }
 
       const contentType =
         xhr.getResponseHeader('Content-Type') || 'application/octet-stream';
