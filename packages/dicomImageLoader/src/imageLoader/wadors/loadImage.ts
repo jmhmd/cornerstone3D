@@ -80,7 +80,6 @@ export interface CornerstoneWadoRsLoaderOptions
   };
   priority?: number;
   addToBeginning?: boolean;
-  progressive?: undefined | { rangeType: 'bytes'; range: [number, number] };
 }
 
 function loadImage(
@@ -104,7 +103,7 @@ function loadImage(
 
     function sendXHR(imageURI: string, imageId: string, mediaType: string) {
       // get the pixel data from the server
-      return getPixelData(imageURI, imageId, mediaType, options.progressive)
+      return getPixelData(imageURI, imageId, mediaType, options.rangeRequest)
         .then((result) => {
           const transferSyntax = getTransferSyntaxForContentType(
             result.contentType

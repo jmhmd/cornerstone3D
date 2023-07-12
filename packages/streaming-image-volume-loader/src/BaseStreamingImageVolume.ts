@@ -12,6 +12,7 @@ import {
 
 import type { Types } from '@cornerstonejs/core';
 import { scaleArray, autoLoad } from './helpers';
+import ProgressiveLoadOptions from 'core/src/types/ProgressiveLoadOptions';
 
 const requestType = Enums.RequestType.Prefetch;
 const { getMinMax } = csUtils;
@@ -26,6 +27,10 @@ export default class BaseStreamingImageVolume extends ImageVolume {
   private framesProcessed = 0;
   protected numFrames: number;
   protected cornerstoneImageMetaData = null;
+  private progressive: ProgressiveLoadOptions;
+  // Index of last byte range to have finished loading, from
+  // `progressive.ranges`
+  private progressiveRangeIndexLoaded: number | null;
 
   loadStatus: {
     loaded: boolean;
@@ -44,6 +49,11 @@ export default class BaseStreamingImageVolume extends ImageVolume {
     this.imageIds = streamingProperties.imageIds;
     this.loadStatus = streamingProperties.loadStatus;
     this.numFrames = this._getNumFrames();
+
+    if (streamingProperties.progressive) {
+      this.progressive = streamingProperties.progressive;
+      this.progressiveRangeIndexLoaded = null;
+    }
 
     this._createCornerstoneImageMetaData();
   }
@@ -203,6 +213,32 @@ export default class BaseStreamingImageVolume extends ImageVolume {
   }
 
   /**
+   * Fetch the next byte range for all images in the volume when doing
+   * progressive load via jph
+   */
+  public loadNextRange(
+    callback: (...args: unknown[]) => void,
+    priority = 5
+  ): void {
+    if (
+      this.progressiveRangeIndexLoaded ===
+      this.progressive.ranges.length - 1
+    ) {
+      console.log(
+        'All defined ranges loaded. If files are not fully loading, add a final range with the end byte omitted or set to `Infinity`.'
+      );
+    }
+
+    // Reset these parameters for loading the next range of bytes for all
+    // imageIds
+    this.framesLoaded = 0;
+    this.framesProcessed = 0;
+    this.loadStatus.loaded = false;
+
+    this.load(callback, priority);
+  }
+
+  /**
    * It triggers a prefetch for images in the volume.
    * @param callback - A callback function to be called when the volume is fully loaded
    * @param priority - The priority for loading the volume images, lower number is higher priority
@@ -210,23 +246,9 @@ export default class BaseStreamingImageVolume extends ImageVolume {
    */
   public load = (
     callback: (...args: unknown[]) => void,
-    priority = 5,
-    progressive:
-      | undefined
-      | {
-          rangeType: 'bytes';
-          range: [number, number];
-        }
+    priority = 5
   ): void => {
     const { imageIds, loadStatus, numFrames } = this;
-
-    // Set image volume status to partial to denote a progressive load,
-    // empty caches
-    if (progressive) {
-      this.loadStatus.partial = true;
-      this.loadStatus.loaded = false;
-      this.loadStatus.cachedFrames = [];
-    }
 
     if (loadStatus.loading === true) {
       console.log(
@@ -255,17 +277,23 @@ export default class BaseStreamingImageVolume extends ImageVolume {
       this.loadStatus.callbacks.push(callback);
     }
 
-    this._prefetchImageIds(priority, progressive);
+    this._prefetchImageIds(priority);
   };
 
   protected getImageIdsRequests = (
     imageIds: string[],
     scalarData: Types.VolumeScalarData,
-    priority: number,
-    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
+    priority: number
   ) => {
     const { loadStatus } = this;
     const { cachedFrames } = loadStatus;
+
+    // Set image volume status to partial to denote a progressive load,
+    // empty caches
+    if (this.progressive) {
+      this.loadStatus.partial = true;
+      this.loadStatus.cachedFrames = [];
+    }
 
     const { vtkOpenGLTexture, imageData, metadata, volumeId } = this;
     const { FrameOfReferenceUID } = metadata;
@@ -410,6 +438,17 @@ export default class BaseStreamingImageVolume extends ImageVolume {
       if (this.framesProcessed === totalNumFrames) {
         loadStatus.loaded = true;
         loadStatus.loading = false;
+
+        if (this.progressive) {
+          if (this.progressiveRangeIndexLoaded === null)
+            this.progressiveRangeIndexLoaded = 0;
+          else this.progressiveRangeIndexLoaded += 1;
+          if (
+            this.progressive.ranges.length ===
+            this.progressiveRangeIndexLoaded - 1
+          )
+            this.loadStatus.partial = false; // Completed loading all defined byte ranges
+        }
 
         // TODO: Should we remove the callbacks in favour of just using events?
         callLoadStatusCallback({
@@ -604,7 +643,15 @@ export default class BaseStreamingImageVolume extends ImageVolume {
           // and therefore doesn't have the scalingParameters
           scalingParameters,
         },
-        progressive,
+        rangeRequest: {
+          rangeType: 'bytes',
+          range:
+            this.progressive.ranges[
+              this.progressiveRangeIndexLoaded === null
+                ? 0
+                : this.progressiveRangeIndexLoaded + 1
+            ],
+        },
       };
 
       // Use loadImage because we are skipping the Cornerstone Image cache
@@ -651,23 +698,17 @@ export default class BaseStreamingImageVolume extends ImageVolume {
    * @returns Array of requests including imageId of the request, its imageIdIndex,
    * options (targetBuffer and scaling parameters), and additionalDetails (volumeId)
    */
-  public getImageLoadRequests(
-    _priority: number,
-    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
-  ): any[] {
+  public getImageLoadRequests(_priority: number): any[] {
     throw new Error('Abstract method');
   }
 
-  private _prefetchImageIds(
-    priority: number,
-    progressive: undefined | { rangeType: 'bytes'; range: [number, number] }
-  ): void {
+  private _prefetchImageIds(priority: number): void {
     // Note: here is the correct location to set the loading flag
     // since getImageIdsRequest is just grabbing and building requests
     // and not actually executing them
     this.loadStatus.loading = true;
 
-    const requests = this.getImageLoadRequests(priority, progressive);
+    const requests = this.getImageLoadRequests(priority);
 
     requests.reverse().forEach((request) => {
       if (!request) {

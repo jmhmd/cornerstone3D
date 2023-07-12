@@ -35,15 +35,22 @@ function getPixelData(
   uri: string,
   imageId: string,
   mediaType = 'application/octet-stream',
-  progressive?: undefined | { rangeType: 'bytes'; range: [number, number] }
+  rangeRequest?: undefined | { rangeType: 'bytes'; range: [number, number?] }
 ): Promise<any> {
   const headers: { Accept: string; Range?: string } = {
     Accept: mediaType,
   };
 
-  if (progressive) {
-    if (progressive.rangeType === 'bytes')
-      headers.Range = `bytes=${progressive.range[0]}-${progressive.range[1]}`;
+  // Handle setting the correct header for range requests. If the second
+  // parameter in the range is absent or `Infinity`, leave it out, i.e.
+  // "bytes=100_000-"
+  if (rangeRequest) {
+    if (rangeRequest.rangeType === 'bytes') {
+      let [startByte, endByte] = rangeRequest.range;
+      headers.Range = `bytes=${startByte}-${
+        !endByte || endByte === Infinity ? '' : endByte
+      }`;
+    }
   }
 
   return new Promise((resolve, reject) => {

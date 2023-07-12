@@ -1,3 +1,5 @@
+import ProgressiveLoadOptions from './ProgressiveLoadOptions';
+
 interface IStreamingVolumeProperties {
   /** imageIds of the volume  */
   imageIds: Array<string>;
@@ -11,6 +13,8 @@ interface IStreamingVolumeProperties {
     cachedFrames: Array<boolean>;
     callbacks: Array<() => void>;
   };
+
+  progressive?: ProgressiveLoadOptions;
 }
 
 export default IStreamingVolumeProperties;

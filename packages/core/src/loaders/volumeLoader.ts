@@ -14,9 +14,11 @@ import triggerEvent from '../utilities/triggerEvent';
 import { uuidv4 } from '../utilities';
 import { Point3, Metadata, EventTypes, Mat3 } from '../types';
 import { getConfiguration } from '../init';
+import ProgressiveLoadOptions from '../types/ProgressiveLoadOptions';
 
 interface VolumeLoaderOptions {
   imageIds: Array<string>;
+  progressive?: ProgressiveLoadOptions;
 }
 
 interface DerivedVolumeOptions {

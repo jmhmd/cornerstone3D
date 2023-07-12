@@ -12,6 +12,7 @@ import type { Types } from '@cornerstonejs/core';
 import { vec3 } from 'gl-matrix';
 import { makeVolumeMetadata, sortImageIdsAndGetSpacing } from './helpers';
 import StreamingImageVolume from './StreamingImageVolume';
+import ProgressiveLoadOptions from 'core/src/types/ProgressiveLoadOptions';
 
 const {
   createUint8SharedArray,
@@ -42,6 +43,7 @@ function cornerstoneStreamingImageVolumeLoader(
   volumeId: string,
   options: {
     imageIds: string[];
+    progressive?: ProgressiveLoadOptions;
   }
 ): IVolumeLoader {
   if (!options || !options.imageIds || !options.imageIds.length) {
@@ -249,6 +251,7 @@ function cornerstoneStreamingImageVolumeLoader(
           cachedFrames: [],
           callbacks: [],
         },
+        progressive: options.progressive,
       }
     );
 
