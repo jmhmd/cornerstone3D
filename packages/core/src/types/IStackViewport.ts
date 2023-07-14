@@ -9,6 +9,7 @@ import { Scaling } from './ScalingParameters';
 import StackViewportProperties from './StackViewportProperties';
 import { ColormapRegistration } from './Colormap';
 import IImage from './IImage';
+import ProgressiveLoadOptions from './ProgressiveLoadOptions';
 
 /**
  * Interface for Stack Viewport
@@ -110,7 +111,8 @@ export default interface IStackViewport extends IViewport {
    */
   setStack(
     imageIds: Array<string>,
-    currentImageIdIndex?: number
+    currentImageIdIndex?: number,
+    progressive?: ProgressiveLoadOptions
   ): Promise<string>;
   /**
    * Centers Pan and resets the zoom for stack viewport.

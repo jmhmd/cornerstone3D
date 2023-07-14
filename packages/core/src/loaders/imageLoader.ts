@@ -4,6 +4,7 @@ import eventTarget from '../eventTarget';
 import { triggerEvent } from '../utilities';
 import { IImage, ImageLoaderFn, IImageLoadObject, EventTypes } from '../types';
 import imageLoadPoolManager from '../requestPool/imageLoadPoolManager';
+import ProgressiveLoadOptions from '../types/ProgressiveLoadOptions';
 
 export interface ImageLoaderOptions {
   priority: number;

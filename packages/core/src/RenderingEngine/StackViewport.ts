@@ -74,6 +74,8 @@ import {
   ImagePixelModule,
   ImagePlaneModule,
 } from '../types';
+import ProgressiveLoadOptions from '../types/ProgressiveLoadOptions';
+import type { DICOMLoaderImageOptions } from '../../../dicomImageLoader/src/types/DICOMLoaderImageOptions';
 
 const EPSILON = 1; // Slice Thickness
 
@@ -110,6 +112,10 @@ type SetVOIOptions = {
  */
 class StackViewport extends Viewport implements IStackViewport {
   private imageIds: Array<string>;
+  private progressive: undefined | ProgressiveLoadOptions;
+  private progressiveRangeIndexLoadedByImageId: {
+    [key: string]: null | number;
+  };
   // current imageIdIndex that is rendered in the viewport
   private currentImageIdIndex: number;
   // the imageIdIndex that is targeted to be loaded with scrolling but has not initiated loading yet
@@ -1479,9 +1485,24 @@ class StackViewport extends Viewport implements IStackViewport {
    */
   public async setStack(
     imageIds: Array<string>,
-    currentImageIdIndex = 0
+    currentImageIdIndex = 0,
+    progressive?: ProgressiveLoadOptions
   ): Promise<string> {
     this._throwIfDestroyed();
+
+    // Set up progressive load options per stack, not per viewport. So if a new
+    // stack gets loaded into this viewport, the settings will be reset here.
+    this.progressive = progressive;
+    if (progressive) {
+      if (!this.progressiveRangeIndexLoadedByImageId)
+        this.progressiveRangeIndexLoadedByImageId = {};
+      // Set ranges loaded by imageId
+      imageIds.forEach((imageId) => {
+        if (this.progressiveRangeIndexLoadedByImageId[imageId] === undefined) {
+          this.progressiveRangeIndexLoadedByImageId[imageId] = null;
+        }
+      });
+    }
 
     this.imageIds = imageIds;
     this.currentImageIdIndex = currentImageIdIndex;
@@ -1656,6 +1677,15 @@ class StackViewport extends Viewport implements IStackViewport {
         imageIdIndex: number,
         imageId: string
       ) {
+        // After loading image, if it's a progressive load then mark that imageId
+        // range loaded
+        if (this.progressive) {
+          const currentRangeIndexLoaded =
+            this.progressiveRangeIndexLoadedByImageId[imageId];
+          this.progressiveRangeIndexLoadedByImageId[imageId] =
+            currentRangeIndexLoaded === null ? 0 : currentRangeIndexLoaded + 1;
+        }
+
         // Perform this check after the image has finished loading
         // in case the user has already scrolled away to another image.
         // In that case, do not render this image.
@@ -1777,7 +1807,16 @@ class StackViewport extends Viewport implements IStackViewport {
           enabled: true,
         },
         useRGBA: true,
-      };
+        rangeRequest: {
+          rangeType: this.progressive.rangeType,
+          range:
+            this.progressive.ranges[
+              this.progressiveRangeIndexLoadedByImageId[imageId] === null
+                ? 0
+                : this.progressiveRangeIndexLoadedByImageId[imageId] + 1
+            ],
+        },
+      } as DICOMLoaderImageOptions;
 
       const eventDetail: EventTypes.PreStackNewImageEventDetail = {
         imageId,
@@ -1800,6 +1839,15 @@ class StackViewport extends Viewport implements IStackViewport {
     return new Promise((resolve, reject) => {
       // 1. Load the image using the Image Loader
       function successCallback(image, imageIdIndex, imageId) {
+        // After loading image, if it's a progressive load then mark that imageId
+        // range loaded
+        if (this.progressive) {
+          const currentRangeIndexLoaded =
+            this.progressiveRangeIndexLoadedByImageId[imageId];
+          this.progressiveRangeIndexLoadedByImageId[imageId] =
+            currentRangeIndexLoaded === null ? 0 : currentRangeIndexLoaded + 1;
+        }
+
         // Todo: trigger an event to allow applications to hook into END of loading state
         // Currently we use loadHandlerManagers for this
         // Perform this check after the image has finished loading
@@ -1880,7 +1928,16 @@ class StackViewport extends Viewport implements IStackViewport {
           enabled: true,
         },
         useRGBA: false,
-      };
+        rangeRequest: {
+          rangeType: this.progressive.rangeType,
+          range:
+            this.progressive.ranges[
+              this.progressiveRangeIndexLoadedByImageId[imageId] === null
+                ? 0
+                : this.progressiveRangeIndexLoadedByImageId[imageId] + 1
+            ],
+        },
+      } as DICOMLoaderImageOptions;
 
       const eventDetail: EventTypes.PreStackNewImageEventDetail = {
         imageId,
