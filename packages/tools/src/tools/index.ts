@@ -9,8 +9,10 @@ import ZoomTool from './ZoomTool';
 import VolumeRotateMouseWheelTool from './VolumeRotateMouseWheelTool';
 import MIPJumpToClickTool from './MIPJumpToClickTool';
 import CrosshairsTool from './CrosshairsTool';
+import CrosshairsMultiTool from './CrosshairsMultiTool';
 import MagnifyTool from './MagnifyTool';
 import ReferenceLinesTool from './ReferenceLinesTool';
+import DynamicReferenceLinesTool from './DynamicReferenceLinesTool';
 import OverlayGridTool from './OverlayGridTool';
 //
 import BidirectionalTool from './annotation/BidirectionalTool';
@@ -59,7 +61,9 @@ export {
   MIPJumpToClickTool,
   // Annotation Tools
   CrosshairsTool,
+  CrosshairsMultiTool,
   ReferenceLinesTool,
+  DynamicReferenceLinesTool,
   OverlayGridTool,
   BidirectionalTool,
   LengthTool,
