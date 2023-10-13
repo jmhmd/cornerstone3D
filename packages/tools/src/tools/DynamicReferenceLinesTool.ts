@@ -4,6 +4,7 @@ import {
   CONSTANTS,
   utilities as csUtils,
   Enums,
+  getEnabledElement,
 } from '@cornerstonejs/core';
 import type { Types } from '@cornerstonejs/core';
 
@@ -15,15 +16,22 @@ import {
 } from '../drawingSvg';
 import { filterViewportsWithToolEnabled } from '../utilities/viewportFilters';
 import triggerAnnotationRenderForViewportIds from '../utilities/triggerAnnotationRenderForViewportIds';
-import { PublicToolProps, ToolProps, SVGDrawingHelper } from '../types';
-import { ReferenceLineAnnotation } from '../types/ToolSpecificAnnotationTypes';
-import { StyleSpecifier } from '../types/AnnotationStyle';
-import AnnotationDisplayTool from './base/AnnotationDisplayTool';
 import {
-  calculateLinesAndHandles,
-  drawLinesAndHandles,
-} from './DynamicReferenceLinesUtil';
+  PublicToolProps,
+  ToolProps,
+  SVGDrawingHelper,
+  Annotations,
+  Annotation,
+  InteractionTypes,
+  ToolHandle,
+} from '../types';
+import { DynamicReferenceLineAnnotation } from '../types/ToolSpecificAnnotationTypes';
+import { StyleSpecifier } from '../types/AnnotationStyle';
+// import AnnotationDisplayTool from './base/AnnotationDisplayTool';
+import { AnnotationTool } from './base';
+import * as lineSegment from '../utilities/math/line';
 import vtkMath from '@kitware/vtk.js/Common/Core/Math';
+import { InteractionEventType, MouseMoveEventType } from '../types/EventTypes';
 
 const { EPSILON } = CONSTANTS;
 
@@ -31,7 +39,7 @@ const { EPSILON } = CONSTANTS;
  * @public
  */
 
-class DynamicReferenceLines extends AnnotationDisplayTool {
+class DynamicReferenceLines extends AnnotationTool {
   static toolName;
 
   public touchDragCallback: any;
@@ -40,7 +48,7 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
   editData: {
     renderingEngine: Types.IRenderingEngine;
     sourceViewport: Types.IStackViewport | Types.IVolumeViewport;
-    annotation: ReferenceLineAnnotation;
+    annotation: DynamicReferenceLineAnnotation;
   } | null = {} as any;
   isDrawing: boolean;
   isHandleOutsideImage: boolean;
@@ -64,6 +72,38 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
     //   100,
     //   { trailing: true }
     // );
+  }
+
+  addNewAnnotation(
+    evt: InteractionEventType,
+    interactionType: InteractionTypes
+  ): Annotation {
+    console.log('addAnnotation not implemented');
+    return;
+  }
+
+  cancel(element: HTMLDivElement) {
+    console.log('cancel not implemented');
+    return;
+  }
+
+  handleSelectedCallback(
+    evt: InteractionEventType,
+    annotation: Annotation,
+    handle: ToolHandle,
+    interactionType: InteractionTypes
+  ): void {
+    console.log('handleSelectedCallback not implemented');
+    return;
+  }
+
+  toolSelectedCallback(
+    evt: InteractionEventType,
+    annotation: Annotation,
+    interactionType: InteractionTypes
+  ): void {
+    console.log('toolSelectedCallback not implemented');
+    return;
   }
 
   _init = (): void => {
@@ -96,7 +136,7 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
     const FrameOfReferenceUID = sourceViewport.getFrameOfReferenceUID();
 
     if (!annotation) {
-      const newAnnotation: ReferenceLineAnnotation = {
+      const newAnnotation: DynamicReferenceLineAnnotation = {
         highlighted: true,
         invalidated: true,
         metadata: {
@@ -104,12 +144,13 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
           viewPlaneNormal: <Types.Point3>[...viewPlaneNormal],
           viewUp: <Types.Point3>[...viewUp],
           FrameOfReferenceUID,
-          referencedImageId: null,
+          referencedImageId: undefined,
         },
         data: {
           handles: {
             points: sourceViewportCanvasCornersInWorld,
           },
+          viewportProjections: {},
         },
       };
 
@@ -120,11 +161,22 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
         sourceViewportCanvasCornersInWorld;
     }
 
-    this.editData = {
-      sourceViewport,
-      renderingEngine,
-      annotation,
-    };
+    viewports.map((viewport) => {
+      const projection = annotation.data.viewportProjections[viewport.id];
+      if (!projection) {
+        annotation.data.viewportProjections[viewport.id] = {
+          highlighted: false,
+        };
+      }
+      return {
+        highlighted: false,
+      };
+    }),
+      (this.editData = {
+        sourceViewport,
+        renderingEngine,
+        annotation,
+      });
 
     triggerAnnotationRenderForViewportIds(
       renderingEngine,
@@ -137,6 +189,9 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
   onSetToolEnabled = (): void => {
     this._init();
   };
+  onSetToolActive = (): void => {
+    this._init();
+  };
 
   onCameraModified = (evt: Types.EventTypes.CameraModifiedEvent): void => {
     // If the camera is modified, we need to update the reference lines
@@ -144,6 +199,63 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
     // camera modification, since we want to update all of them
     // with respect to the targetViewport
     this._init();
+  };
+
+  filterInteractableAnnotationsForElement = (element, annotations) => {
+    return annotations;
+    // if (!annotations || !annotations.length) {
+    //   return [];
+    // }
+
+    // const enabledElement = getEnabledElement(element);
+    // const { viewportId } = enabledElement;
+
+    // const viewportUIDSpecificReferenceLine = annotations.filter(
+    //   (annotation) => annotation.data.viewportId === viewportId
+    // );
+
+    // return viewportUIDSpecificReferenceLine;
+  };
+
+  mouseMoveCallback = (
+    evt: MouseMoveEventType,
+    filteredAnnotations?: Annotations
+  ) => {
+    const { element, currentPoints } = evt.detail;
+    const enabledElement = getEnabledElement(element);
+    if (enabledElement.viewportId === this.editData.sourceViewport?.id) {
+      return;
+    }
+    const annotation = this.editData.annotation;
+    const viewportProjection =
+      annotation.data.viewportProjections[enabledElement.viewportId];
+    const wasHighlighted = viewportProjection.highlighted;
+    let needsUpdate = false;
+    if (
+      annotation &&
+      this.isPointNearTool(
+        element,
+        annotation as DynamicReferenceLineAnnotation,
+        currentPoints.canvas,
+        6
+      )
+    ) {
+      if (!wasHighlighted) {
+        needsUpdate = true;
+        // Set other projections to not highlighted
+        Object.values(annotation.data.viewportProjections).forEach(
+          (proj) => (proj.highlighted = false)
+        );
+      }
+      viewportProjection.highlighted = true;
+    } else {
+      if (wasHighlighted) {
+        needsUpdate = true;
+      }
+      viewportProjection.highlighted = false;
+    }
+
+    return needsUpdate;
   };
 
   /**
@@ -160,6 +272,9 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
   ): boolean => {
     const { viewport: targetViewport } = enabledElement;
     const { annotation, sourceViewport } = this.editData;
+
+    const viewportProjection =
+      annotation.data.viewportProjections[targetViewport.id];
 
     let renderStatus = false;
 
@@ -248,7 +363,11 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
     const { annotationUID } = annotation;
 
     styleSpecifier.annotationUID = annotationUID;
-    const lineWidth = this.getStyle('lineWidth', styleSpecifier, annotation);
+    const lineWidth = this.getStyle(
+      'lineWidth',
+      styleSpecifier,
+      annotation
+    ) as number;
     const lineDash = this.getStyle('lineDash', styleSpecifier, annotation);
     const color = this.getStyle('color', styleSpecifier, annotation);
     const shadow = this.getStyle('shadow', styleSpecifier, annotation);
@@ -288,99 +407,124 @@ class DynamicReferenceLines extends AnnotationDisplayTool {
       },
       dataId
     );
+    viewportProjection.lineCoordsCanvas = [
+      canvasCoordinates[0],
+      canvasCoordinates[1],
+    ];
 
-    /**
-     * https://math.stackexchange.com/a/4347547
-Since point 𝐷
- will be on 𝐴𝐶
-, then there exists a scalar 𝑡∈ℝ
- such that
+    // Draw Drag handles if highlighted
 
-𝐷=𝐴+𝑡(𝐶−𝐴)(1)
+    if (viewportProjection.highlighted) {
+      /**
+       * Calculate the focal point of the referenced (source) image, and project
+       * it onto the reference line. Then calculate the position of rotation drag
+       * handles on the reference line and draw them.
+       *
+       * Example of how to calculate a perpendicular line from a point to another
+       * line: https://math.stackexchange.com/a/4347547
+       *
+       * Since point 𝐷 will be on 𝐴𝐶 , then there exists a scalar 𝑡∈ℝ such
+       * that
+       *
+       *   𝐷=𝐴+𝑡(𝐶−𝐴)(1)
+       *
+       *   The vector (𝐶−𝐴) is the direction vector of the ray 𝐴𝐶 . Now we
+       *    want want 𝐵𝐷=𝐷−𝐵 to be perpendicular to (𝐶−𝐴) . Then using dot
+       *    product we must have
+       *
+       *   [(𝐴−𝐵)+𝑡(𝐶−𝐴)]⋅(𝐶−𝐴)=0(2)
+       *
+       *   From which, 𝑡=(𝐵−𝐴)⋅(𝐶−𝐴)(𝐶−𝐴)⋅(𝐶−𝐴)(3)
+       *
+       *   Using 𝑡 from (3) into (1) gives the point 𝐷
+       *
+       */
 
-The vector (𝐶−𝐴)
- is the direction vector of the ray 𝐴𝐶
-. Now we want want 𝐵𝐷=𝐷−𝐵
- to be perpendicular to (𝐶−𝐴)
-. Then using dot product we must have
+      const refLineVector = vec3.subtract(
+        vec3.create(),
+        lineStartWorld,
+        lineEndWorld
+      );
+      const focalPointToLineStartVector = vec3.subtract(
+        vec3.create(),
+        sourceFocalPoint,
+        lineEndWorld
+      );
+      const distance =
+        vec3.dot(refLineVector, focalPointToLineStartVector) /
+        vec3.dot(refLineVector, refLineVector);
 
-[(𝐴−𝐵)+𝑡(𝐶−𝐴)]⋅(𝐶−𝐴)=0(2)
+      // Position of the source image focal point projected on the reference
+      // line (i.e. the line intersection of the source and target image
+      // planes). This should represent the center of rotation on the reference
+      // line.
+      const refLineFocalPointProjWorld = vec3.scaleAndAdd(
+        vec3.create(),
+        lineEndWorld,
+        refLineVector,
+        distance
+      );
 
-From which, 𝑡=(𝐵−𝐴)⋅(𝐶−𝐴)(𝐶−𝐴)⋅(𝐶−𝐴)(3)
-
-Using 𝑡
- from (3)
- into (1)
- gives the point 𝐷
-.
-     */
-
-    const refLineVector = vec3.subtract(
-      vec3.create(),
-      lineStartWorld,
-      lineEndWorld
-    );
-    const focalPointToLineStartVector = vec3.subtract(
-      vec3.create(),
-      sourceFocalPoint,
-      lineEndWorld
-    );
-    const distance =
-      vec3.dot(refLineVector, focalPointToLineStartVector) /
-      vec3.dot(refLineVector, refLineVector);
-    const refLineFocalPointProjWorld = vec3.scaleAndAdd(
-      vec3.create(),
-      lineEndWorld,
-      refLineVector,
-      distance
-    );
-    const canvasMinDimensionLength = Math.min(
-      targetViewport.canvas.clientHeight,
-      targetViewport.canvas.clientWidth
-    );
-    const focalPointToLineStartVec = vec2.subtract(
-      vec2.create(),
-      targetViewport.worldToCanvas(lineStartWorld),
-      targetViewport.worldToCanvas(refLineFocalPointProjWorld as Types.Point3)
-    );
-    const rotationHandleDistanceVector = vec2.scale(
-      vec2.create(),
-      vec2.normalize(vec2.create(), focalPointToLineStartVec),
-      canvasMinDimensionLength * 0.4
-    );
-    const rotationHandle1 = vec2.add(
-      vec2.create(),
-      targetViewport.worldToCanvas(refLineFocalPointProjWorld as Types.Point3),
-      rotationHandleDistanceVector
-    );
-    const rotationHandle2 = vec2.subtract(
-      vec2.create(),
-      targetViewport.worldToCanvas(refLineFocalPointProjWorld as Types.Point3),
-      rotationHandleDistanceVector
-    );
-
-    drawHandlesSvg(
-      svgDrawingHelper,
-      'newuid',
-      'rotateHandles',
-      [
+      // Calculate drag handle positions in 2D space
+      const canvasMinDimensionLength = Math.min(
+        targetViewport.canvas.clientHeight,
+        targetViewport.canvas.clientWidth
+      );
+      const focalPointToLineStartVec = vec2.subtract(
+        vec2.create(),
+        targetViewport.worldToCanvas(lineStartWorld),
+        targetViewport.worldToCanvas(refLineFocalPointProjWorld as Types.Point3)
+      );
+      const rotationHandleDistanceVector = vec2.scale(
+        vec2.create(),
+        vec2.normalize(vec2.create(), focalPointToLineStartVec),
+        canvasMinDimensionLength * 0.4 // How far from the center to draw the handles
+      );
+      const rotationHandle1 = vec2.add(
+        vec2.create(),
         targetViewport.worldToCanvas(
           refLineFocalPointProjWorld as Types.Point3
         ),
+        rotationHandleDistanceVector
+      );
+      const rotationHandle2 = vec2.subtract(
+        vec2.create(),
+        targetViewport.worldToCanvas(
+          refLineFocalPointProjWorld as Types.Point3
+        ),
+        rotationHandleDistanceVector
+      );
+
+      drawHandlesSvg(
+        svgDrawingHelper,
+        annotationUID,
+        'rotateHandles',
+        [
+          // targetViewport.worldToCanvas(
+          //   refLineFocalPointProjWorld as Types.Point3
+          // ),
+          rotationHandle1 as Types.Point2,
+          rotationHandle2 as Types.Point2,
+        ],
+        {
+          color,
+          handleRadius: this.configuration.mobile?.enabled
+            ? this.configuration.mobile?.handleRadius
+            : 3,
+          opacity: this.configuration.mobile?.enabled
+            ? this.configuration.mobile?.opacity
+            : 1,
+          type: 'circle',
+        }
+      );
+
+      // Update tool data
+
+      viewportProjection.dragHandlesCanvas = [
         rotationHandle1 as Types.Point2,
         rotationHandle2 as Types.Point2,
-      ],
-      {
-        color: 'rgb(255, 0, 0)',
-        handleRadius: this.configuration.mobile?.enabled
-          ? this.configuration.mobile?.handleRadius
-          : 3,
-        opacity: this.configuration.mobile?.enabled
-          ? this.configuration.mobile?.opacity
-          : 1,
-        type: 'circle',
-      }
-    );
+      ];
+    }
 
     // Finished rendering
     renderStatus = true;
@@ -514,387 +658,55 @@ Using 𝑡
     );
   }
 
-  /*
-
-  setSlabThickness(viewport, slabThickness) {
-    // let actorUIDs;
-    // const { filterActorUIDsToSetSlabThickness } = this.configuration;
-    // if (
-    //   filterActorUIDsToSetSlabThickness &&
-    //   filterActorUIDsToSetSlabThickness.length > 0
-    // ) {
-    //   actorUIDs = filterActorUIDsToSetSlabThickness;
-    // }
-
-    let blendModeToUse = this.configuration.slabThicknessBlendMode;
-    if (slabThickness === CONSTANTS.RENDERING_DEFAULTS.MINIMUM_SLAB_THICKNESS) {
-      blendModeToUse = Enums.BlendModes.COMPOSITE;
+  /**
+   * It returns if the canvas point is near the provided length annotation in the provided
+   * element or not. A proximity is passed to the function to determine the
+   * proximity of the point to the annotation in number of pixels.
+   *
+   * @param element - HTML Element
+   * @param annotation - Annotation
+   * @param canvasCoords - Canvas coordinates
+   * @param proximity - Proximity to tool to consider
+   * @returns Boolean, whether the canvas point is near tool
+   */
+  isPointNearTool = (
+    element: HTMLDivElement,
+    annotation: DynamicReferenceLineAnnotation,
+    canvasCoords: Types.Point2,
+    proximity: number
+  ): boolean => {
+    const enabledElement = getEnabledElement(element);
+    const { viewportId } = enabledElement;
+    const { data } = annotation;
+    const viewportToolProjections = data.viewportProjections[viewportId];
+    if (!viewportToolProjections) {
+      console.warn('No tool projection for viewport id ', viewportId);
+      return;
     }
 
-    const immediate = false;
-    viewport.setBlendMode(blendModeToUse, actorUIDs, immediate);
-    viewport.setSlabThickness(slabThickness, actorUIDs);
-  }
+    const line = {
+      start: {
+        x: viewportToolProjections.lineCoordsCanvas[0][0],
+        y: viewportToolProjections.lineCoordsCanvas[0][1],
+      },
+      end: {
+        x: viewportToolProjections.lineCoordsCanvas[1][0],
+        y: viewportToolProjections.lineCoordsCanvas[1][1],
+      },
+    };
 
-  _applyDeltaShiftToViewportCamera(
-    renderingEngine: Types.IRenderingEngine,
-    annotation,
-    delta
-  ) {
-    // update camera for the other viewports.
-    // NOTE1: The lines then are rendered by the onCameraModified
-    // NOTE2: crosshair center are automatically updated in the onCameraModified event
-    const { data } = annotation;
+    const distanceToPoint = lineSegment.distanceToPoint(
+      [line.start.x, line.start.y],
+      [line.end.x, line.end.y],
+      [canvasCoords[0], canvasCoords[1]]
+    );
 
-    const viewport = renderingEngine.getViewport(data.viewportId);
-    const camera = viewport.getCamera();
-    const normal = camera.viewPlaneNormal;
-
-    // Project delta over camera normal
-    // (we don't need to pan, we need only to scroll the camera as in the wheel stack scroll tool)
-    const dotProd = vtkMath.dot(delta, normal);
-    const projectedDelta: Types.Point3 = [...normal];
-    vtkMath.multiplyScalar(projectedDelta, dotProd);
-
-    if (
-      Math.abs(projectedDelta[0]) > 1e-3 ||
-      Math.abs(projectedDelta[1]) > 1e-3 ||
-      Math.abs(projectedDelta[2]) > 1e-3
-    ) {
-      const newFocalPoint: Types.Point3 = [0, 0, 0];
-      const newPosition: Types.Point3 = [0, 0, 0];
-
-      vtkMath.add(camera.focalPoint, projectedDelta, newFocalPoint);
-      vtkMath.add(camera.position, projectedDelta, newPosition);
-
-      viewport.setCamera({
-        focalPoint: newFocalPoint,
-        position: newPosition,
-      });
-      viewport.render();
-    }
-  }
-
-  _pointNearReferenceLine = (
-    annotation,
-    canvasCoords,
-    proximity,
-    lineViewport
-  ) => {
-    const { data } = annotation;
-    const { rotationPoints } = data.handles;
-
-    for (let i = 0; i < rotationPoints.length - 1; ++i) {
-      const otherViewport = rotationPoints[i][1];
-      if (otherViewport.id !== lineViewport.id) {
-        continue;
-      }
-
-      const viewportControllable = this._getReferenceLineControllable(
-        otherViewport.id
-      );
-      if (!viewportControllable) {
-        continue;
-      }
-
-      const lineSegment1 = {
-        start: {
-          x: rotationPoints[i][2][0],
-          y: rotationPoints[i][2][1],
-        },
-        end: {
-          x: rotationPoints[i][3][0],
-          y: rotationPoints[i][3][1],
-        },
-      };
-
-      const distanceToPoint1 = lineSegment.distanceToPoint(
-        [lineSegment1.start.x, lineSegment1.start.y],
-        [lineSegment1.end.x, lineSegment1.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      const lineSegment2 = {
-        start: {
-          x: rotationPoints[i + 1][2][0],
-          y: rotationPoints[i + 1][2][1],
-        },
-        end: {
-          x: rotationPoints[i + 1][3][0],
-          y: rotationPoints[i + 1][3][1],
-        },
-      };
-
-      const distanceToPoint2 = lineSegment.distanceToPoint(
-        [lineSegment2.start.x, lineSegment2.start.y],
-        [lineSegment2.end.x, lineSegment2.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      if (distanceToPoint1 <= proximity || distanceToPoint2 <= proximity) {
-        return true;
-      }
-
-      // rotation handles are two for viewport
-      i++;
+    if (distanceToPoint <= proximity) {
+      return true;
     }
 
     return false;
   };
-
-  _getRotationHandleNearImagePoint(
-    viewport,
-    annotation,
-    canvasCoords,
-    proximity
-  ) {
-    const { data } = annotation;
-    const { rotationPoints } = data.handles;
-
-    for (let i = 0; i < rotationPoints.length; i++) {
-      const point = rotationPoints[i][0];
-      const otherViewport = rotationPoints[i][1];
-      const viewportControllable = this._getReferenceLineControllable(
-        otherViewport.id
-      );
-      if (!viewportControllable) {
-        continue;
-      }
-
-      const viewportDraggableRotatable =
-        this._getReferenceLineDraggableRotatable(otherViewport.id);
-      if (!viewportDraggableRotatable) {
-        continue;
-      }
-
-      const annotationCanvasCoordinate = viewport.worldToCanvas(point);
-      if (vec2.distance(canvasCoords, annotationCanvasCoordinate) < proximity) {
-        data.handles.activeOperation = OPERATION.ROTATE;
-
-        this.editData = {
-          annotation,
-        };
-
-        return point;
-      }
-    }
-
-    return null;
-  }
-
-  _getSlabThicknessHandleNearImagePoint(
-    viewport,
-    annotation,
-    canvasCoords,
-    proximity
-  ) {
-    const { data } = annotation;
-    const { slabThicknessPoints } = data.handles;
-
-    for (let i = 0; i < slabThicknessPoints.length; i++) {
-      const point = slabThicknessPoints[i][0];
-      const otherViewport = slabThicknessPoints[i][1];
-      const viewportControllable = this._getReferenceLineControllable(
-        otherViewport.id
-      );
-      if (!viewportControllable) {
-        continue;
-      }
-
-      const viewportSlabThicknessControlsOn =
-        this._getReferenceLineSlabThicknessControlsOn(otherViewport.id);
-      if (!viewportSlabThicknessControlsOn) {
-        continue;
-      }
-
-      const annotationCanvasCoordinate = viewport.worldToCanvas(point);
-      if (vec2.distance(canvasCoords, annotationCanvasCoordinate) < proximity) {
-        data.handles.activeOperation = OPERATION.SLAB;
-
-        data.activeViewportIds = [otherViewport.id];
-
-        this.editData = {
-          annotation,
-        };
-
-        return point;
-      }
-    }
-
-    return null;
-  }
-
-  _pointNearTool(element, annotation, canvasCoords, proximity) {
-    const enabledElement = getEnabledElement(element);
-    const { viewport } = enabledElement;
-    const { clientWidth, clientHeight } = viewport.canvas;
-    const canvasDiagonalLength = Math.sqrt(
-      clientWidth * clientWidth + clientHeight * clientHeight
-    );
-    const { data } = annotation;
-
-    const { rotationPoints } = data.handles;
-    const { slabThicknessPoints } = data.handles;
-    const viewportIdArray = [];
-
-    for (let i = 0; i < rotationPoints.length - 1; ++i) {
-      const otherViewport = rotationPoints[i][1];
-      const viewportControllable = this._getReferenceLineControllable(
-        otherViewport.id
-      );
-      const viewportDraggableRotatable =
-        this._getReferenceLineDraggableRotatable(otherViewport.id);
-
-      if (!viewportControllable || !viewportDraggableRotatable) {
-        continue;
-      }
-
-      const lineSegment1 = {
-        start: {
-          x: rotationPoints[i][2][0],
-          y: rotationPoints[i][2][1],
-        },
-        end: {
-          x: rotationPoints[i][3][0],
-          y: rotationPoints[i][3][1],
-        },
-      };
-
-      const distanceToPoint1 = lineSegment.distanceToPoint(
-        [lineSegment1.start.x, lineSegment1.start.y],
-        [lineSegment1.end.x, lineSegment1.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      const lineSegment2 = {
-        start: {
-          x: rotationPoints[i + 1][2][0],
-          y: rotationPoints[i + 1][2][1],
-        },
-        end: {
-          x: rotationPoints[i + 1][3][0],
-          y: rotationPoints[i + 1][3][1],
-        },
-      };
-
-      const distanceToPoint2 = lineSegment.distanceToPoint(
-        [lineSegment2.start.x, lineSegment2.start.y],
-        [lineSegment2.end.x, lineSegment2.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      if (distanceToPoint1 <= proximity || distanceToPoint2 <= proximity) {
-        viewportIdArray.push(otherViewport.id);
-        data.handles.activeOperation = OPERATION.DRAG;
-      }
-
-      // rotation handles are two for viewport
-      i++;
-    }
-
-    for (let i = 0; i < slabThicknessPoints.length - 1; ++i) {
-      const otherViewport = slabThicknessPoints[i][1];
-      if (viewportIdArray.find((id) => id === otherViewport.id)) {
-        continue;
-      }
-
-      const viewportControllable = this._getReferenceLineControllable(
-        otherViewport.id
-      );
-      const viewportSlabThicknessControlsOn =
-        this._getReferenceLineSlabThicknessControlsOn(otherViewport.id);
-
-      if (!viewportControllable || !viewportSlabThicknessControlsOn) {
-        continue;
-      }
-
-      const stPointLineCanvas1 = slabThicknessPoints[i][2];
-      const stPointLineCanvas2 = slabThicknessPoints[i][3];
-
-      const centerCanvas = vec2.create();
-      vec2.add(centerCanvas, stPointLineCanvas1, stPointLineCanvas2);
-      vec2.scale(centerCanvas, centerCanvas, 0.5);
-
-      const canvasUnitVectorFromCenter = vec2.create();
-      vec2.subtract(
-        canvasUnitVectorFromCenter,
-        stPointLineCanvas1,
-        centerCanvas
-      );
-      vec2.normalize(canvasUnitVectorFromCenter, canvasUnitVectorFromCenter);
-
-      const canvasVectorFromCenterStart = vec2.create();
-      vec2.scale(
-        canvasVectorFromCenterStart,
-        canvasUnitVectorFromCenter,
-        canvasDiagonalLength * 0.05
-      );
-
-      const stPointLineCanvas1Start = vec2.create();
-      const stPointLineCanvas2Start = vec2.create();
-      vec2.add(
-        stPointLineCanvas1Start,
-        centerCanvas,
-        canvasVectorFromCenterStart
-      );
-      vec2.subtract(
-        stPointLineCanvas2Start,
-        centerCanvas,
-        canvasVectorFromCenterStart
-      );
-
-      const lineSegment1 = {
-        start: {
-          x: stPointLineCanvas1Start[0],
-          y: stPointLineCanvas1Start[1],
-        },
-        end: {
-          x: stPointLineCanvas1[0],
-          y: stPointLineCanvas1[1],
-        },
-      };
-
-      const distanceToPoint1 = lineSegment.distanceToPoint(
-        [lineSegment1.start.x, lineSegment1.start.y],
-        [lineSegment1.end.x, lineSegment1.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      const lineSegment2 = {
-        start: {
-          x: stPointLineCanvas2Start[0],
-          y: stPointLineCanvas2Start[1],
-        },
-        end: {
-          x: stPointLineCanvas2[0],
-          y: stPointLineCanvas2[1],
-        },
-      };
-
-      const distanceToPoint2 = lineSegment.distanceToPoint(
-        [lineSegment2.start.x, lineSegment2.start.y],
-        [lineSegment2.end.x, lineSegment2.end.y],
-        [canvasCoords[0], canvasCoords[1]]
-      );
-
-      if (distanceToPoint1 <= proximity || distanceToPoint2 <= proximity) {
-        viewportIdArray.push(otherViewport.id); // we still need this to draw inactive slab thickness handles
-        data.handles.activeOperation = null; // no operation
-      }
-
-      // slab thickness handles are in couples
-      i++;
-    }
-
-    data.activeViewportIds = [...viewportIdArray];
-
-    this.editData = {
-      annotation,
-    };
-
-    return data.handles.activeOperation === OPERATION.DRAG ? true : false;
-  }
-  */
 }
 
 DynamicReferenceLines.toolName = 'DynamicReferenceLines';
