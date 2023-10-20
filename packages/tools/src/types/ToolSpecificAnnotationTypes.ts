@@ -302,21 +302,6 @@ export interface ReferenceLineAnnotation extends Annotation {
   };
 }
 
-export interface DynamicReferenceLineAnnotation extends Annotation {
-  data: {
-    handles: {
-      points: Types.Point3[];
-    };
-    viewportProjections: {
-      [key: string]: {
-        lineCoordsCanvas?: [Types.Point2, Types.Point2];
-        dragHandlesCanvas?: [Types.Point2, Types.Point2];
-        highlighted: boolean;
-      };
-    };
-  };
-}
-
 export interface ScaleOverlayAnnotation extends Annotation {
   data: {
     handles: {

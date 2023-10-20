@@ -25,15 +25,40 @@ import {
   InteractionTypes,
   ToolHandle,
 } from '../types';
-import { DynamicReferenceLineAnnotation } from '../types/ToolSpecificAnnotationTypes';
 import { StyleSpecifier } from '../types/AnnotationStyle';
 // import AnnotationDisplayTool from './base/AnnotationDisplayTool';
 import { AnnotationTool } from './base';
 import * as lineSegment from '../utilities/math/line';
 import vtkMath from '@kitware/vtk.js/Common/Core/Math';
-import { InteractionEventType, MouseMoveEventType } from '../types/EventTypes';
+import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
+import {
+  InteractionEventType,
+  MouseClickEventType,
+  MouseDownEventType,
+  MouseMoveEventType,
+} from '../types/EventTypes';
+import { Events } from '../enums';
+import { planeDistanceToPoint, planeEquation } from 'core/src/utilities/planar';
 
 const { EPSILON } = CONSTANTS;
+
+interface DynamicReferenceLineAnnotation extends Annotation {
+  data: {
+    handles: {
+      points: Types.Point3[];
+      activeOperation: 'drag' | 'rotate' | null;
+    };
+    viewportProjections: {
+      [key: string]: {
+        lineCoordsCanvas?: [Types.Point2, Types.Point2];
+        dragHandlesCanvas?: [Types.Point2, Types.Point2];
+        lineCenterCanvas?: Types.Point2;
+        lineCenterWorld?: Types.Point3;
+        highlighted: boolean;
+      };
+    };
+  };
+}
 
 /**
  * @public
@@ -52,6 +77,7 @@ class DynamicReferenceLines extends AnnotationTool {
   } | null = {} as any;
   isDrawing: boolean;
   isHandleOutsideImage: boolean;
+  interceptedMouseEventsElements: HTMLDivElement[];
 
   constructor(
     toolProps: PublicToolProps = {},
@@ -67,11 +93,7 @@ class DynamicReferenceLines extends AnnotationTool {
   ) {
     super(toolProps, defaultToolProps);
 
-    // this._throttledCalculateCachedStats = throttle(
-    //   this._calculateCachedStats,
-    //   100,
-    //   { trailing: true }
-    // );
+    this.interceptedMouseEventsElements = [];
   }
 
   addNewAnnotation(
@@ -93,7 +115,8 @@ class DynamicReferenceLines extends AnnotationTool {
     handle: ToolHandle,
     interactionType: InteractionTypes
   ): void {
-    console.log('handleSelectedCallback not implemented');
+    this._activateModify(evt.detail.element);
+    evt.preventDefault();
     return;
   }
 
@@ -102,8 +125,55 @@ class DynamicReferenceLines extends AnnotationTool {
     annotation: Annotation,
     interactionType: InteractionTypes
   ): void {
-    console.log('toolSelectedCallback not implemented');
+    this._activateModify(evt.detail.element);
+    evt.preventDefault();
     return;
+  }
+
+  handleInterceptedMouseDown(e: MouseEvent) {
+    // Find point on target canvas
+    const { pageX, pageY } = e;
+    const element = e.currentTarget as HTMLDivElement;
+    const boundingRect = element.getBoundingClientRect();
+    const canvasX = pageX - boundingRect.left - window.scrollX;
+    const canvasY = pageY - boundingRect.top - window.scrollY;
+    const isNearHandle = this.getHandleNearImagePoint(
+      element,
+      this.editData.annotation,
+      [canvasX, canvasY],
+      6
+    );
+    const isNearTool = this.isPointNearTool(
+      element,
+      this.editData.annotation,
+      [canvasX, canvasY],
+      6
+    );
+    // console.log('is near handle:', isNearHandle, 'is near tool', isNearTool);
+    const event = new CustomEvent('DYNAMIC_REFERENCE_LINES_MOUSE_DOWN', {
+      detail: {
+        isNearTool: isNearTool ? true : false,
+      },
+      cancelable: true,
+      bubbles: true,
+    });
+
+    return element.dispatchEvent(event);
+  }
+
+  interceptMouseEventsForElement(element) {
+    if (this.interceptedMouseEventsElements.includes(element)) {
+      return;
+    }
+    element.addEventListener(
+      'mousedown',
+      this.handleInterceptedMouseDown.bind(this)
+    );
+    // element.addEventListener(
+    //   'CORNERSTONE_TOOLS_MOUSE_DOWN',
+    //   this.handleInterceptedMouseDown.bind(this)
+    // );
+    this.interceptedMouseEventsElements.push(element);
   }
 
   _init = (): void => {
@@ -149,6 +219,7 @@ class DynamicReferenceLines extends AnnotationTool {
         data: {
           handles: {
             points: sourceViewportCanvasCornersInWorld,
+            activeOperation: null,
           },
           viewportProjections: {},
         },
@@ -171,12 +242,18 @@ class DynamicReferenceLines extends AnnotationTool {
       return {
         highlighted: false,
       };
-    }),
-      (this.editData = {
-        sourceViewport,
-        renderingEngine,
-        annotation,
-      });
+    });
+
+    this.editData = {
+      sourceViewport,
+      renderingEngine,
+      annotation,
+    };
+
+    for (const viewport of viewports) {
+      const { element } = viewport;
+      this.interceptMouseEventsForElement(element);
+    }
 
     triggerAnnotationRenderForViewportIds(
       renderingEngine,
@@ -217,6 +294,30 @@ class DynamicReferenceLines extends AnnotationTool {
     // return viewportUIDSpecificReferenceLine;
   };
 
+  getHandleNearImagePoint(
+    element: HTMLDivElement,
+    annotation: DynamicReferenceLineAnnotation,
+    canvasCoords: Types.Point2,
+    proximity: number
+  ): ToolHandle {
+    const enabledElement = getEnabledElement(element);
+    const { viewportId, viewport } = enabledElement;
+    for (const vId in annotation.data.viewportProjections) {
+      const dragHandles =
+        annotation.data.viewportProjections[vId].dragHandlesCanvas;
+      if (!dragHandles) {
+        continue;
+      }
+      for (const handle of dragHandles) {
+        if (vec2.distance(canvasCoords, handle) < proximity) {
+          this.editData.annotation.data.handles.activeOperation = 'rotate';
+          return viewport.canvasToWorld(handle);
+        }
+      }
+    }
+    return null;
+  }
+
   mouseMoveCallback = (
     evt: MouseMoveEventType,
     filteredAnnotations?: Annotations
@@ -227,6 +328,9 @@ class DynamicReferenceLines extends AnnotationTool {
       return;
     }
     const annotation = this.editData.annotation;
+    if (!annotation) {
+      return;
+    }
     const viewportProjection =
       annotation.data.viewportProjections[enabledElement.viewportId];
     const wasHighlighted = viewportProjection.highlighted;
@@ -258,6 +362,253 @@ class DynamicReferenceLines extends AnnotationTool {
     return needsUpdate;
   };
 
+  _activateModify = (element) => {
+    // mobile sometimes has lingering interaction even when touchEnd triggers
+    // this check allows for multiple handles to be active which doesn't affect
+    // tool usage.
+    // state.isInteractingWithTool = !this.configuration.mobile?.enabled;
+
+    element.addEventListener(Events.MOUSE_UP, this._endCallback);
+    element.addEventListener(Events.MOUSE_DRAG, this._dragCallback);
+    element.addEventListener(Events.MOUSE_CLICK, this._endCallback);
+
+    element.addEventListener(Events.TOUCH_END, this._endCallback);
+    element.addEventListener(Events.TOUCH_DRAG, this._dragCallback);
+    element.addEventListener(Events.TOUCH_TAP, this._endCallback);
+  };
+
+  _deactivateModify = (element) => {
+    // state.isInteractingWithTool = false;
+
+    element.removeEventListener(Events.MOUSE_UP, this._endCallback);
+    element.removeEventListener(Events.MOUSE_DRAG, this._dragCallback);
+    element.removeEventListener(Events.MOUSE_CLICK, this._endCallback);
+
+    element.removeEventListener(Events.TOUCH_END, this._endCallback);
+    element.removeEventListener(Events.TOUCH_DRAG, this._dragCallback);
+    element.removeEventListener(Events.TOUCH_TAP, this._endCallback);
+  };
+
+  _endCallback = (evt: InteractionEventType) => {
+    const eventDetail = evt.detail;
+    const { element } = eventDetail;
+
+    this._deactivateModify(element);
+  };
+
+  _dragCallback = (evt: InteractionEventType) => {
+    const eventDetail = evt.detail;
+    const delta = eventDetail.deltaPoints.world;
+
+    if (
+      Math.abs(delta[0]) < 1e-3 &&
+      Math.abs(delta[1]) < 1e-3 &&
+      Math.abs(delta[2]) < 1e-3
+    ) {
+      return;
+    }
+
+    const { element } = eventDetail;
+    const enabledElement = getEnabledElement(element);
+    const { renderingEngine, viewport: targetViewport } = enabledElement;
+    const { sourceViewport, annotation } = this.editData;
+
+    const targetProjection =
+      annotation.data.viewportProjections[targetViewport.id];
+
+    const { handles } = annotation.data;
+    const { currentPoints } = evt.detail;
+    const canvasCoords = currentPoints.canvas;
+
+    if (handles.activeOperation === 'drag') {
+      // TRANSLATION
+      // get the annotation of the other viewport which are parallel to the delta shift and are of the same scene
+      // const otherViewportAnnotations =
+      //   this._getAnnotationsForViewportsWithDifferentCameras(
+      //     enabledElement,
+      //     annotations
+      //   );
+
+      // const viewportsAnnotationsToUpdate = otherViewportAnnotations.filter(
+      //   (annotation) => {
+      //     const { data } = annotation;
+      //     const otherViewport = renderingEngine.getViewport(data.viewportId);
+      //     const otherViewportControllable = this._getReferenceLineControllable(
+      //       otherViewport.id
+      //     );
+      //     const otherViewportDraggableRotatable =
+      //       this._getReferenceLineDraggableRotatable(otherViewport.id);
+
+      //     return (
+      //       otherViewportControllable === true &&
+      //       otherViewportDraggableRotatable === true &&
+      //       viewportAnnotation.data.activeViewportIds.find(
+      //         (id) => id === otherViewport.id
+      //       )
+      //     );
+      //   }
+      // );
+
+      this._applyDeltaShiftToSourceViewportCamera(delta);
+    } else if (handles.activeOperation === 'rotate') {
+      // ROTATION
+      // const otherViewportAnnotations =
+      //   this._getAnnotationsForViewportsWithDifferentCameras(
+      //     enabledElement,
+      //     annotations
+      //   );
+
+      // const viewportsAnnotationsToUpdate = otherViewportAnnotations.filter(
+      //   (annotation) => {
+      //     const { data } = annotation;
+      //     const otherViewport = renderingEngine.getViewport(data.viewportId);
+      //     const otherViewportControllable = this._getReferenceLineControllable(
+      //       otherViewport.id
+      //     );
+      //     const otherViewportDraggableRotatable =
+      //       this._getReferenceLineDraggableRotatable(otherViewport.id);
+
+      //     return (
+      //       otherViewportControllable === true &&
+      //       otherViewportDraggableRotatable === true
+      //     );
+      //   }
+      // );
+
+      const dir1 = vec2.create();
+      const dir2 = vec2.create();
+
+      // const center: Types.Point3 = [
+      //   this.toolCenter[0],
+      //   this.toolCenter[1],
+      //   this.toolCenter[2],
+      // ];
+      const sourceCenter = sourceViewport.getCamera().focalPoint;
+      const centerCanvas = targetProjection.lineCenterCanvas;
+
+      const finalPointCanvas = currentPoints.canvas;
+      const originalPointCanvas = vec2.sub(
+        vec2.create(),
+        finalPointCanvas,
+        eventDetail.deltaPoints.canvas
+      );
+      vec2.sub(dir1, originalPointCanvas, centerCanvas);
+      vec2.sub(dir2, finalPointCanvas, centerCanvas);
+
+      let angle = vec2.angle(dir1, dir2);
+
+      if (
+        this._isClockWise(centerCanvas, originalPointCanvas, finalPointCanvas)
+      ) {
+        angle *= -1;
+      }
+
+      // Rounding the angle to allow rotated handles to be undone
+      // If we don't round and rotate handles clockwise by 0.0131233 radians,
+      // there's no assurance that the counter-clockwise rotation occurs at
+      // precisely -0.0131233, resulting in the drawn annotations being lost.
+      // angle = Math.round(angle * 100) / 100;
+
+      // const rotationAxis = sourceViewport.getCamera().viewPlaneNormal;
+      // const rotationAxis = sourceViewport.getCamera().viewUp;
+
+      // Rotation axis should be along the vector from the source viewport focal
+      // point to the reference line center point
+      const rotationAxis = vec3.subtract(
+        vec3.create(),
+        sourceCenter,
+        targetProjection.lineCenterWorld
+      );
+      const {
+        viewPlaneNormal: targetViewportNormal,
+        focalPoint: targetFocalPoint,
+      } = targetViewport.getCamera();
+      const targetViewportPlane = csUtils.planar.planeEquation(
+        targetViewportNormal,
+        targetFocalPoint
+      );
+      const reverseAngle =
+        csUtils.planar.planeDistanceToPoint(
+          targetViewportPlane,
+          sourceCenter,
+          true
+        ) < 0;
+      if (reverseAngle) {
+        angle = -angle;
+      }
+
+      // @ts-ignore : vtkjs incorrect typing
+      const { matrix } = vtkMatrixBuilder
+        .buildFromRadian()
+        .translate(sourceCenter[0], sourceCenter[1], sourceCenter[2])
+        // @ts-ignore
+        .rotate(angle, rotationAxis) //todo: why we are passing
+        .translate(-sourceCenter[0], -sourceCenter[1], -sourceCenter[2]);
+
+      // update camera for the source viewport.
+      const sourceCamera = sourceViewport.getCamera();
+      const { viewUp, position, focalPoint } = sourceCamera;
+
+      viewUp[0] += position[0];
+      viewUp[1] += position[1];
+      viewUp[2] += position[2];
+
+      vec3.transformMat4(focalPoint, focalPoint, matrix);
+      vec3.transformMat4(position, position, matrix);
+      vec3.transformMat4(viewUp, viewUp, matrix);
+
+      viewUp[0] -= position[0];
+      viewUp[1] -= position[1];
+      viewUp[2] -= position[2];
+
+      sourceViewport.setCamera({
+        position,
+        viewUp,
+        focalPoint,
+      });
+
+      renderingEngine.renderViewport(sourceViewport.id);
+    }
+  };
+
+  _isClockWise(a, b, c) {
+    // return true if the rotation is clockwise
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0;
+  }
+
+  _applyDeltaShiftToSourceViewportCamera(delta) {
+    // update camera for the other viewports.
+    // NOTE1: The lines then are rendered by the onCameraModified
+    // NOTE2: crosshair center are automatically updated in the onCameraModified event
+    const { sourceViewport } = this.editData;
+    const camera = sourceViewport.getCamera();
+    const normal = camera.viewPlaneNormal;
+
+    // Project delta over camera normal
+    // (we don't need to pan, we need only to scroll the camera as in the wheel stack scroll tool)
+    const dotProd = vtkMath.dot(delta, normal);
+    const projectedDelta: Types.Point3 = [...normal];
+    vtkMath.multiplyScalar(projectedDelta, dotProd);
+
+    if (
+      Math.abs(projectedDelta[0]) > 1e-3 ||
+      Math.abs(projectedDelta[1]) > 1e-3 ||
+      Math.abs(projectedDelta[2]) > 1e-3
+    ) {
+      const newFocalPoint: Types.Point3 = [0, 0, 0];
+      const newPosition: Types.Point3 = [0, 0, 0];
+
+      vtkMath.add(camera.focalPoint, projectedDelta, newFocalPoint);
+      vtkMath.add(camera.position, projectedDelta, newPosition);
+
+      sourceViewport.setCamera({
+        focalPoint: newFocalPoint,
+        position: newPosition,
+      });
+      sourceViewport.render();
+    }
+  }
+
   /**
    * it is used to draw the length annotation in each
    * request animation frame. It calculates the updated cached statistics if
@@ -273,9 +624,6 @@ class DynamicReferenceLines extends AnnotationTool {
     const { viewport: targetViewport } = enabledElement;
     const { annotation, sourceViewport } = this.editData;
 
-    const viewportProjection =
-      annotation.data.viewportProjections[targetViewport.id];
-
     let renderStatus = false;
 
     if (!sourceViewport) {
@@ -290,6 +638,9 @@ class DynamicReferenceLines extends AnnotationTool {
     if (!annotation || !annotation?.data?.handles?.points) {
       return renderStatus;
     }
+
+    const viewportProjection =
+      annotation.data.viewportProjections[targetViewport.id];
 
     const styleSpecifier: StyleSpecifier = {
       toolGroupId: this.toolGroupId,
@@ -519,11 +870,15 @@ class DynamicReferenceLines extends AnnotationTool {
       );
 
       // Update tool data
-
       viewportProjection.dragHandlesCanvas = [
         rotationHandle1 as Types.Point2,
         rotationHandle2 as Types.Point2,
       ];
+      viewportProjection.lineCenterCanvas = targetViewport.worldToCanvas(
+        refLineFocalPointProjWorld as Types.Point3
+      );
+      viewportProjection.lineCenterWorld =
+        refLineFocalPointProjWorld as Types.Point3;
     }
 
     // Finished rendering
@@ -683,6 +1038,9 @@ class DynamicReferenceLines extends AnnotationTool {
       console.warn('No tool projection for viewport id ', viewportId);
       return;
     }
+    if (!viewportToolProjections.lineCoordsCanvas) {
+      return;
+    }
 
     const line = {
       start: {
@@ -702,6 +1060,7 @@ class DynamicReferenceLines extends AnnotationTool {
     );
 
     if (distanceToPoint <= proximity) {
+      this.editData.annotation.data.handles.activeOperation = 'drag';
       return true;
     }
 
