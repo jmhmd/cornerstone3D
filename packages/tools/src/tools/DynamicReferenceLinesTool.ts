@@ -16,6 +16,7 @@ import {
 } from '../drawingSvg';
 import { filterViewportsWithToolEnabled } from '../utilities/viewportFilters';
 import triggerAnnotationRenderForViewportIds from '../utilities/triggerAnnotationRenderForViewportIds';
+import { state } from '../store';
 import {
   PublicToolProps,
   ToolProps,
@@ -24,6 +25,8 @@ import {
   Annotation,
   InteractionTypes,
   ToolHandle,
+  IPoints,
+  ITouchPoints,
 } from '../types';
 import { StyleSpecifier } from '../types/AnnotationStyle';
 // import AnnotationDisplayTool from './base/AnnotationDisplayTool';
@@ -31,14 +34,11 @@ import { AnnotationTool } from './base';
 import * as lineSegment from '../utilities/math/line';
 import vtkMath from '@kitware/vtk.js/Common/Core/Math';
 import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
-import {
-  InteractionEventType,
-  MouseClickEventType,
-  MouseDownEventType,
-  MouseMoveEventType,
-} from '../types/EventTypes';
+import { InteractionEventType, MouseMoveEventType } from '../types/EventTypes';
 import { Events } from '../enums';
-import { planeDistanceToPoint, planeEquation } from 'core/src/utilities/planar';
+import { scrollVolume } from '../utilities/scroll';
+import { getSliceRange } from 'core/src/utilities';
+import vtkVolume from '@kitware/vtk.js/Rendering/Core/Volume';
 
 const { EPSILON } = CONSTANTS;
 
@@ -153,6 +153,7 @@ class DynamicReferenceLines extends AnnotationTool {
     const event = new CustomEvent('DYNAMIC_REFERENCE_LINES_MOUSE_DOWN', {
       detail: {
         isNearTool: isNearTool ? true : false,
+        isNearHandle: isNearHandle ? true : false,
       },
       cancelable: true,
       bubbles: true,
@@ -366,7 +367,7 @@ class DynamicReferenceLines extends AnnotationTool {
     // mobile sometimes has lingering interaction even when touchEnd triggers
     // this check allows for multiple handles to be active which doesn't affect
     // tool usage.
-    // state.isInteractingWithTool = !this.configuration.mobile?.enabled;
+    state.isInteractingWithTool = !this.configuration.mobile?.enabled;
 
     element.addEventListener(Events.MOUSE_UP, this._endCallback);
     element.addEventListener(Events.MOUSE_DRAG, this._dragCallback);
@@ -378,7 +379,7 @@ class DynamicReferenceLines extends AnnotationTool {
   };
 
   _deactivateModify = (element) => {
-    // state.isInteractingWithTool = false;
+    state.isInteractingWithTool = false;
 
     element.removeEventListener(Events.MOUSE_UP, this._endCallback);
     element.removeEventListener(Events.MOUSE_DRAG, this._dragCallback);
@@ -422,67 +423,25 @@ class DynamicReferenceLines extends AnnotationTool {
 
     if (handles.activeOperation === 'drag') {
       // TRANSLATION
-      // get the annotation of the other viewport which are parallel to the delta shift and are of the same scene
-      // const otherViewportAnnotations =
-      //   this._getAnnotationsForViewportsWithDifferentCameras(
-      //     enabledElement,
-      //     annotations
-      //   );
 
-      // const viewportsAnnotationsToUpdate = otherViewportAnnotations.filter(
-      //   (annotation) => {
-      //     const { data } = annotation;
-      //     const otherViewport = renderingEngine.getViewport(data.viewportId);
-      //     const otherViewportControllable = this._getReferenceLineControllable(
-      //       otherViewport.id
-      //     );
-      //     const otherViewportDraggableRotatable =
-      //       this._getReferenceLineDraggableRotatable(otherViewport.id);
-
-      //     return (
-      //       otherViewportControllable === true &&
-      //       otherViewportDraggableRotatable === true &&
-      //       viewportAnnotation.data.activeViewportIds.find(
-      //         (id) => id === otherViewport.id
-      //       )
-      //     );
-      //   }
-      // );
-
-      this._applyDeltaShiftToSourceViewportCamera(delta);
+      if (sourceViewport.type === Enums.ViewportType.ORTHOGRAPHIC) {
+        const deltaFromProjectedCenter = vec3.sub(
+          vec3.create(),
+          currentPoints.world,
+          targetProjection.lineCenterWorld
+        );
+        this._applyDeltaShiftToSourceViewportCamera(
+          deltaFromProjectedCenter as Types.Point3
+        );
+      } else {
+        this._snapToNearestStackImage(currentPoints);
+      }
     } else if (handles.activeOperation === 'rotate') {
       // ROTATION
-      // const otherViewportAnnotations =
-      //   this._getAnnotationsForViewportsWithDifferentCameras(
-      //     enabledElement,
-      //     annotations
-      //   );
-
-      // const viewportsAnnotationsToUpdate = otherViewportAnnotations.filter(
-      //   (annotation) => {
-      //     const { data } = annotation;
-      //     const otherViewport = renderingEngine.getViewport(data.viewportId);
-      //     const otherViewportControllable = this._getReferenceLineControllable(
-      //       otherViewport.id
-      //     );
-      //     const otherViewportDraggableRotatable =
-      //       this._getReferenceLineDraggableRotatable(otherViewport.id);
-
-      //     return (
-      //       otherViewportControllable === true &&
-      //       otherViewportDraggableRotatable === true
-      //     );
-      //   }
-      // );
 
       const dir1 = vec2.create();
       const dir2 = vec2.create();
 
-      // const center: Types.Point3 = [
-      //   this.toolCenter[0],
-      //   this.toolCenter[1],
-      //   this.toolCenter[2],
-      // ];
       const sourceCenter = sourceViewport.getCamera().focalPoint;
       const centerCanvas = targetProjection.lineCenterCanvas;
 
@@ -576,7 +535,21 @@ class DynamicReferenceLines extends AnnotationTool {
     return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0;
   }
 
-  _applyDeltaShiftToSourceViewportCamera(delta) {
+  _snapToNearestStackImage(currentPoints: IPoints | ITouchPoints) {
+    const { sourceViewport } = this.editData;
+    // const sourceCamera = sourceViewport.getCamera();
+    // const sourceNormal = sourceCamera.viewPlaneNormal;
+    const sourceStackViewport = sourceViewport as Types.IStackViewport;
+    const closestStackImageIndex = csUtils.getClosestStackImageIndexForPoint(
+      currentPoints.world,
+      sourceStackViewport
+    );
+    const currentImageIdIndex = sourceViewport.getCurrentImageIdIndex();
+    // @ts-ignore
+    sourceStackViewport.scroll(closestStackImageIndex - currentImageIdIndex);
+  }
+
+  _applyDeltaShiftToSourceViewportCamera(delta: Types.Point3) {
     // update camera for the other viewports.
     // NOTE1: The lines then are rendered by the onCameraModified
     // NOTE2: crosshair center are automatically updated in the onCameraModified event
@@ -590,6 +563,14 @@ class DynamicReferenceLines extends AnnotationTool {
     const projectedDelta: Types.Point3 = [...normal];
     vtkMath.multiplyScalar(projectedDelta, dotProd);
 
+    const volumeId = this.getTargetId(sourceViewport).split('volumeId:')[1];
+    const { numScrollSteps, currentStepIndex, sliceRangeInfo } =
+      csUtils.getVolumeViewportScrollInfo(
+        sourceViewport as Types.IVolumeViewport,
+        volumeId
+      );
+    const { min, max } = sliceRangeInfo.sliceRange;
+
     if (
       Math.abs(projectedDelta[0]) > 1e-3 ||
       Math.abs(projectedDelta[1]) > 1e-3 ||
@@ -601,10 +582,21 @@ class DynamicReferenceLines extends AnnotationTool {
       vtkMath.add(camera.focalPoint, projectedDelta, newFocalPoint);
       vtkMath.add(camera.position, projectedDelta, newPosition);
 
+      const newSliceRange = getSliceRange(
+        sourceViewport.getActor(volumeId).actor as vtkVolume,
+        normal,
+        newFocalPoint
+      );
+
+      if (newSliceRange.current > max || newSliceRange.current < min) {
+        return;
+      }
+
       sourceViewport.setCamera({
         focalPoint: newFocalPoint,
         position: newPosition,
       });
+
       sourceViewport.render();
     }
   }

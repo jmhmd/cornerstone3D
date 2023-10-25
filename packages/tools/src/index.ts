@@ -43,7 +43,6 @@ import {
   PlanarFreehandROITool,
   ArrowAnnotateTool,
   CrosshairsTool,
-  CrosshairsMultiTool,
   ReferenceLinesTool,
   DynamicReferenceLinesTool,
   RectangleScissorsTool,
@@ -91,7 +90,6 @@ export {
   // Annotation Tools
   LengthTool,
   CrosshairsTool,
-  CrosshairsMultiTool,
   ReferenceLinesTool,
   DynamicReferenceLinesTool,
   OverlayGridTool,
