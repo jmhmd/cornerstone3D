@@ -3,6 +3,36 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [1.21.0](https://github.com/cornerstonejs/cornerstone3D/compare/v1.20.3...v1.21.0) (2023-10-10)
+
+### Features
+
+- **advancedMagnifyTool:** advanced magnfying glass ([#816](https://github.com/cornerstonejs/cornerstone3D/issues/816)) ([a76cba9](https://github.com/cornerstonejs/cornerstone3D/commit/a76cba917fd1f67b4fc53ae19f77a7d9a70ba732))
+
+## [1.20.3](https://github.com/cornerstonejs/cornerstone3D/compare/v1.20.2...v1.20.3) (2023-10-09)
+
+### Bug Fixes
+
+- **voi:** should publish voi change event on reset ([#821](https://github.com/cornerstonejs/cornerstone3D/issues/821)) ([84f9ab9](https://github.com/cornerstonejs/cornerstone3D/commit/84f9ab91b37fa1b898e211b5ec68ea090aba2691))
+
+## [1.20.2](https://github.com/cornerstonejs/cornerstone3D/compare/v1.20.1...v1.20.2) (2023-10-09)
+
+### Bug Fixes
+
+- **modality unit:** fix the modality unit per target ([#820](https://github.com/cornerstonejs/cornerstone3D/issues/820)) ([41f06a7](https://github.com/cornerstonejs/cornerstone3D/commit/41f06a76376e399b6344caab5a3b7121bf1584f0))
+
+## [1.20.1](https://github.com/cornerstonejs/cornerstone3D/compare/v1.20.0...v1.20.1) (2023-10-06)
+
+### Bug Fixes
+
+- **exports:** clean up rtss exports ([#814](https://github.com/cornerstonejs/cornerstone3D/issues/814)) ([a0dd324](https://github.com/cornerstonejs/cornerstone3D/commit/a0dd32499cc58001e4f49e2bda8d034b7f4ef48f))
+
+# [1.20.0](https://github.com/cornerstonejs/cornerstone3D/compare/v1.19.4...v1.20.0) (2023-10-06)
+
+### Features
+
+- **adapter:** add RTSS Adapter and Labelmaps to Contours convertor ([#734](https://github.com/cornerstonejs/cornerstone3D/issues/734)) ([e3e05bd](https://github.com/cornerstonejs/cornerstone3D/commit/e3e05bd5ec0d851576fc76a2440e688c0a6e70d9))
+
 ## [1.19.4](https://github.com/cornerstonejs/cornerstone3D/compare/v1.19.3...v1.19.4) (2023-10-04)
 
 ### Bug Fixes
