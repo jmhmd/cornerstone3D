@@ -12,6 +12,7 @@ import CrosshairsTool from './CrosshairsTool';
 import MagnifyTool from './MagnifyTool';
 import AdvancedMagnifyTool from './AdvancedMagnifyTool';
 import ReferenceLinesTool from './ReferenceLinesTool';
+import DynamicReferenceLinesTool from './DynamicReferenceLinesTool';
 import OverlayGridTool from './OverlayGridTool';
 import SegmentationIntersectionTool from './SegmentationIntersectionTool';
 //
@@ -62,6 +63,7 @@ export {
   // Annotation Tools
   CrosshairsTool,
   ReferenceLinesTool,
+  DynamicReferenceLinesTool,
   OverlayGridTool,
   SegmentationIntersectionTool,
   BidirectionalTool,
