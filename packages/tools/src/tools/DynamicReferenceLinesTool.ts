@@ -526,7 +526,7 @@ class DynamicReferenceLines extends AnnotationTool {
         focalPoint,
       });
 
-      renderingEngine.renderViewport(sourceViewport.id);
+      sourceViewport.render();
     }
   };
 

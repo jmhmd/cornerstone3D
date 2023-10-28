@@ -101,27 +101,17 @@ class OrientationMarkerTool extends BaseTool {
   private cleanUpData() {
     const renderingEngines = getRenderingEngines();
     const renderingEngine = renderingEngines[0];
-    const viewports = renderingEngine.getViewports();
+    // const viewports = renderingEngine.getViewports();
 
-    viewports.forEach((viewport) => {
-      const orientationMarker = this.orientationMarkers[viewport.id];
-      if (!orientationMarker) {
-        return;
-      }
-
+    for (const viewportId in this.orientationMarkers) {
+      const orientationMarker = this.orientationMarkers[viewportId];
       const { actor, orientationWidget } = orientationMarker;
-      orientationWidget?.setEnabled(false);
       orientationWidget?.delete();
       actor?.delete();
-
-      const renderWindow = viewport
-        .getRenderingEngine()
-        .offscreenMultiRenderWindow.getRenderWindow();
-      renderWindow.render();
-      viewport.getRenderingEngine().render();
-
-      delete this.orientationMarkers[viewport.id];
-    });
+      const viewport = renderingEngine.getViewport(viewportId);
+      viewport?.render();
+      delete this.orientationMarkers[viewportId];
+    }
   }
 
   private initViewports() {
