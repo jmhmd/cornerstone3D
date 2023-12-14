@@ -1,6 +1,6 @@
 import vtkVolume from '@kitware/vtk.js/Rendering/Core/Volume';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
-import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps';
+// import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps';
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction';
 
 import cache from '../cache';
@@ -236,7 +236,7 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
    *
    * @returns void
    */
-  private setColormap(
+  private async setColormap(
     colormap: ColormapPublic,
     volumeId: string,
     suppressEvents?: boolean
@@ -257,6 +257,10 @@ abstract class BaseVolumeViewport extends Viewport implements IVolumeViewport {
     const { name } = colormap;
 
     if (!colormapObj) {
+      const vtkColorMaps = await import(
+        '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps'
+      );
+      // @ts-ignore
       colormapObj = vtkColorMaps.getPresetByName(name);
     }
 

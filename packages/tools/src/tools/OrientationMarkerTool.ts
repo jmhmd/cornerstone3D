@@ -3,7 +3,7 @@ import vtkAnnotatedCubeActor from '@kitware/vtk.js/Rendering/Core/AnnotatedCubeA
 import vtkAxesActor from '@kitware/vtk.js/Rendering/Core/AxesActor';
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
-import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
+// import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
 
 import { BaseTool } from './base';
@@ -101,27 +101,17 @@ class OrientationMarkerTool extends BaseTool {
   private cleanUpData() {
     const renderingEngines = getRenderingEngines();
     const renderingEngine = renderingEngines[0];
-    const viewports = renderingEngine.getViewports();
+    // const viewports = renderingEngine.getViewports();
 
-    viewports.forEach((viewport) => {
-      const orientationMarker = this.orientationMarkers[viewport.id];
-      if (!orientationMarker) {
-        return;
-      }
-
+    for (const viewportId in this.orientationMarkers) {
+      const orientationMarker = this.orientationMarkers[viewportId];
       const { actor, orientationWidget } = orientationMarker;
-      orientationWidget?.setEnabled(false);
       orientationWidget?.delete();
       actor?.delete();
-
-      const renderWindow = viewport
-        .getRenderingEngine()
-        .offscreenMultiRenderWindow.getRenderWindow();
-      renderWindow.render();
-      viewport.getRenderingEngine().render();
-
-      delete this.orientationMarkers[viewport.id];
-    });
+      const viewport = renderingEngine.getViewport(viewportId);
+      viewport?.render();
+      delete this.orientationMarkers[viewportId];
+    }
   }
 
   private initViewports() {
@@ -196,23 +186,23 @@ class OrientationMarkerTool extends BaseTool {
   }
 
   private async createCustomActor() {
+    const vtkXMLPolyDataReader = await import(
+      '@kitware/vtk.js/IO/XML/XMLPolyDataReader'
+    );
     const url =
       this.configuration.overlayConfiguration[OverlayMarkerType.CUSTOM]
         .polyDataURL;
-
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
     const vtpReader = vtkXMLPolyDataReader.newInstance();
     vtpReader.parseAsArrayBuffer(arrayBuffer);
     vtpReader.update();
-
     const polyData = vtkPolyData.newInstance();
     polyData.shallowCopy(vtpReader.getOutputData());
     polyData.getPointData().setActiveScalars('Color');
     const mapper = vtkMapper.newInstance();
     mapper.setInputData(polyData);
     mapper.setColorModeToDirectScalars();
-
     const actor = vtkActor.newInstance();
     actor.setMapper(mapper);
     actor.rotateZ(180);

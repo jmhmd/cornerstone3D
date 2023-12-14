@@ -4,6 +4,7 @@ import type { vtkImageData as vtkImageDataType } from '@kitware/vtk.js/Common/Da
 import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps';
 import _cloneDeep from 'lodash.clonedeep';
 import vtkCamera from '@kitware/vtk.js/Rendering/Core/Camera';
+// import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps';
 import { vec2, vec3, mat4 } from 'gl-matrix';
 import vtkImageMapper from '@kitware/vtk.js/Rendering/Core/ImageMapper';
 import vtkImageSlice from '@kitware/vtk.js/Rendering/Core/ImageSlice';
@@ -2898,15 +2899,20 @@ class StackViewport extends Viewport implements IStackViewport, IImagesLoader {
     this.render();
   }
 
-  private setColormapGPU(colormap: ColormapPublic) {
+  private async setColormapGPU(colormap: ColormapPublic) {
     const ActorEntry = this.getDefaultActor();
     const actor = ActorEntry.actor as ImageActor;
     const actorProp = actor.getProperty();
     const rgbTransferFunction = actorProp.getRGBTransferFunction();
 
-    const colormapObj =
-      colormapUtils.getColormap(colormap.name) ||
+    const colormapObj = colormapUtils.getColormap(colormap.name);
+    if (!colormapObj) {
+      const vtkColorMaps = await import(
+        '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps'
+      );
+      // @ts-ignore
       vtkColorMaps.getPresetByName(colormap.name);
+    }
 
     if (!rgbTransferFunction) {
       const cfun = vtkColorTransferFunction.newInstance();
