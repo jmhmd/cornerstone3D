@@ -1,4 +1,4 @@
-import { cache, getEnabledElement, StackViewport } from '@cornerstonejs/core';
+import { cache, getEnabledElement } from '@cornerstonejs/core';
 import type { Types } from '@cornerstonejs/core';
 
 import { BaseTool } from '../base';
@@ -10,6 +10,7 @@ import {
 } from '../../types';
 
 import { fillInsideCircle } from './strategies/fillCircle';
+import { eraseInsideCircle } from './strategies/eraseCircle';
 import { Events } from '../../enums';
 import { drawCircle as drawCircleSvg } from '../../drawingSvg';
 import {
@@ -25,7 +26,12 @@ import {
   config as segmentationConfig,
 } from '../../stateManagement/segmentation';
 import { getSegmentation } from '../../stateManagement/segmentation/segmentationState';
-import { LabelmapSegmentationData } from '../../types/LabelmapTypes';
+import {
+  LabelmapSegmentationData,
+  LabelmapSegmentationDataStack,
+  LabelmapSegmentationDataVolume,
+} from '../../types/LabelmapTypes';
+import { isVolumeSegmentation } from './strategies/utils/stackVolumeCheck';
 
 /**
  * Tool for manipulating segmentation data by drawing a circle. It acts on the
@@ -38,9 +44,12 @@ class CircleScissorsTool extends BaseTool {
   static toolName;
   editData: {
     annotation: any;
-    segmentation: any;
     segmentIndex: number;
-    segmentationId: string;
+    //
+    volumeId: string;
+    referencedVolumeId: string;
+    imageIdReferenceMap: Map<string, string>;
+    //
     segmentsLocked: number[];
     segmentColor: [number, number, number, number];
     viewportIdsToRender: string[];
@@ -49,6 +58,7 @@ class CircleScissorsTool extends BaseTool {
     newAnnotation?: boolean;
     hasMoved?: boolean;
     centerCanvas?: Array<number>;
+    segmentationRepresentationUID?: string;
   } | null;
   isDrawing: boolean;
   isHandleOutsideImage: boolean;
@@ -60,7 +70,7 @@ class CircleScissorsTool extends BaseTool {
       configuration: {
         strategies: {
           FILL_INSIDE: fillInsideCircle,
-          // ERASE_INSIDE: eraseInsideCircle,
+          ERASE_INSIDE: eraseInsideCircle,
         },
         defaultStrategy: 'FILL_INSIDE',
         activeStrategy: 'FILL_INSIDE',
@@ -116,8 +126,13 @@ class CircleScissorsTool extends BaseTool {
     const { representationData } = getSegmentation(segmentationId);
 
     // Todo: are we going to support contour editing with rectangle scissors?
-    const { volumeId } = representationData[type] as LabelmapSegmentationData;
-    const segmentation = cache.getVolume(volumeId);
+    const labelmapData = representationData[type];
+
+    if (!labelmapData) {
+      throw new Error(
+        'No labelmap data found for the active segmentation, create one before using scissors tool'
+      );
+    }
 
     // Todo: Used for drawing the svg only, we might not need it at all
     const annotation = {
@@ -145,7 +160,6 @@ class CircleScissorsTool extends BaseTool {
 
     this.editData = {
       annotation,
-      segmentation,
       centerCanvas: canvasPos,
       segmentIndex,
       segmentationId,
@@ -156,7 +170,27 @@ class CircleScissorsTool extends BaseTool {
       movingTextBox: false,
       newAnnotation: true,
       hasMoved: false,
-    };
+      segmentationRepresentationUID,
+    } as any;
+
+    if (isVolumeSegmentation(labelmapData as LabelmapSegmentationData)) {
+      const { volumeId } = labelmapData as LabelmapSegmentationDataVolume;
+      const segmentation = cache.getVolume(volumeId);
+
+      this.editData = {
+        ...this.editData,
+        volumeId,
+        referencedVolumeId: segmentation.referencedVolumeId,
+      };
+    } else {
+      const { imageIdReferenceMap } =
+        labelmapData as LabelmapSegmentationDataStack;
+
+      this.editData = {
+        ...this.editData,
+        imageIdReferenceMap,
+      };
+    }
 
     this._activateDraw(element);
 
@@ -221,15 +255,7 @@ class CircleScissorsTool extends BaseTool {
     const eventDetail = evt.detail;
     const { element } = eventDetail;
 
-    const {
-      annotation,
-      newAnnotation,
-      hasMoved,
-      segmentation,
-      segmentIndex,
-      segmentsLocked,
-      segmentationId,
-    } = this.editData;
+    const { annotation, newAnnotation, hasMoved } = this.editData;
     const { data } = annotation;
     const { viewPlaneNormal, viewUp } = annotation.metadata;
 
@@ -244,24 +270,17 @@ class CircleScissorsTool extends BaseTool {
     resetElementCursor(element);
 
     const enabledElement = getEnabledElement(element);
-    const { viewport } = enabledElement;
+
+    const operationData = {
+      ...this.editData,
+      points: data.handles.points,
+      viewPlaneNormal,
+      viewUp,
+      strategySpecificConfiguration: {},
+    };
 
     this.editData = null;
     this.isDrawing = false;
-
-    if (viewport instanceof StackViewport) {
-      throw new Error('Not implemented yet');
-    }
-
-    const operationData = {
-      points: data.handles.points,
-      volume: segmentation,
-      segmentIndex,
-      segmentsLocked,
-      viewPlaneNormal,
-      segmentationId,
-      viewUp,
-    };
 
     this.applyActiveStrategy(enabledElement, operationData);
   };

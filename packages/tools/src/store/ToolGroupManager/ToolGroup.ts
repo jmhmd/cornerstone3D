@@ -8,7 +8,6 @@ import {
   getRenderingEngines,
   getEnabledElementByIds,
   Settings,
-  utilities as csUtils,
 } from '@cornerstonejs/core';
 import type { Types } from '@cornerstonejs/core';
 import { Events } from '../../enums';
@@ -47,6 +46,10 @@ export default class ToolGroup implements IToolGroup {
   id: string;
   viewportsInfo = [];
   toolOptions = {};
+  /**
+   * Options used for restoring a tool
+   */
+  restoreToolOptions = {};
   _toolInstances = {};
 
   constructor(id: string) {
@@ -270,7 +273,10 @@ export default class ToolGroup implements IToolGroup {
     }
 
     if (mode === ToolModes.Active) {
-      this.setToolActive(toolName, options);
+      this.setToolActive(
+        toolName,
+        options || this.restoreToolOptions[toolName]
+      );
       return;
     }
 
@@ -510,6 +516,8 @@ export default class ToolGroup implements IToolGroup {
       mode: Disabled,
     };
 
+    this.restoreToolOptions[toolName] = this.toolOptions[toolName];
+
     this.toolOptions[toolName] = toolOptions;
     toolInstance.mode = Disabled;
 
@@ -666,7 +674,7 @@ export default class ToolGroup implements IToolGroup {
    * getToolConfiguration('LengthTool', 'firstLevel.secondLevel')
    * // get from LengthTool instance the configuration value as being LengthToolInstance[configuration][firstLevel][secondLevel]
    */
-  getToolConfiguration(toolName: string, configurationPath: string): any {
+  getToolConfiguration(toolName: string, configurationPath?: string): any {
     if (this._toolInstances[toolName] === undefined) {
       console.warn(
         `Tool ${toolName} not present, can't set tool configuration.`
@@ -674,10 +682,9 @@ export default class ToolGroup implements IToolGroup {
       return;
     }
 
-    const _configuration = get(
-      this._toolInstances[toolName].configuration,
-      configurationPath
-    );
+    const _configuration =
+      get(this._toolInstances[toolName].configuration, configurationPath) ||
+      this._toolInstances[toolName].configuration;
 
     return cloneDeep(_configuration);
   }

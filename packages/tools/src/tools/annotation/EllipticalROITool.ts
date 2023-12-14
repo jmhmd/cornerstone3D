@@ -24,7 +24,7 @@ import { isAnnotationLocked } from '../../stateManagement/annotation/annotationL
 import { isAnnotationVisible } from '../../stateManagement/annotation/annotationVisibility';
 import {
   drawCircle as drawCircleSvg,
-  drawEllipse as drawEllipseSvg,
+  drawEllipseByCoordinates as drawEllipseSvg,
   drawHandles as drawHandlesSvg,
   drawLinkedTextBox as drawLinkedTextBoxSvg,
 } from '../../drawingSvg';
@@ -785,20 +785,9 @@ class EllipticalROITool extends AnnotationTool {
       const rotation = Math.abs(
         viewport.getRotation() - (data.initialRotation || 0)
       );
-      let canvasCorners;
-
-      if (rotation == 90 || rotation == 270) {
-        canvasCorners = <Array<Types.Point2>>getCanvasEllipseCorners([
-          canvasCoordinates[2], // bottom
-          canvasCoordinates[3], // top
-          canvasCoordinates[0], // left
-          canvasCoordinates[1], // right
-        ]);
-      } else {
-        canvasCorners = <Array<Types.Point2>>(
-          getCanvasEllipseCorners(canvasCoordinates) // bottom, top, left, right, keep as is
-        );
-      }
+      const canvasCorners = <Array<Types.Point2>>(
+        getCanvasEllipseCorners(canvasCoordinates) // bottom, top, left, right, keep as is
+      );
 
       const { centerPointRadius } = this.configuration;
 
@@ -905,8 +894,7 @@ class EllipticalROITool extends AnnotationTool {
         svgDrawingHelper,
         annotationUID,
         ellipseUID,
-        canvasCorners[0],
-        canvasCorners[1],
+        canvasCoordinates,
         {
           color,
           lineDash,
@@ -1114,7 +1102,7 @@ class EllipticalROITool extends AnnotationTool {
 
         const pointsInShape = pointInShapeCallback(
           imageData,
-          (pointLPS, pointIJK) => pointInEllipse(ellipseObj, pointLPS),
+          (pointLPS) => pointInEllipse(ellipseObj, pointLPS, { fast: true }),
           this.configuration.statsCalculator.statsCallback,
           boundsIJK
         );

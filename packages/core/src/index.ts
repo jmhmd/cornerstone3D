@@ -40,6 +40,7 @@ import {
   resetUseSharedArrayBuffer,
   getConfiguration,
   setConfiguration,
+  getWebWorkerManager,
 } from './init';
 
 // Classes
@@ -66,6 +67,7 @@ import triggerEvent from './utilities/triggerEvent';
 import {
   setVolumesForViewports,
   addVolumesToViewports,
+  addImageSlicesToViewports,
 } from './RenderingEngine/helpers';
 
 // Add new types here so that they can be imported singly as required.
@@ -85,6 +87,7 @@ export {
   // configs
   getConfiguration,
   setConfiguration,
+  getWebWorkerManager,
   // enums
   Enums,
   CONSTANTS,
@@ -125,6 +128,7 @@ export {
   utilities,
   setVolumesForViewports,
   addVolumesToViewports,
+  addImageSlicesToViewports,
   //
   imageLoadPoolManager as requestPoolManager,
   imageRetrievalPoolManager,

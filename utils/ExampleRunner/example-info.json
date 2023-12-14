@@ -13,13 +13,13 @@
       "description": "Advanced Tools library"
     },
     "dicom-image-loader": {
-      "description": "Cornerstone dicom image loader"
+      "description": "DICOM image loader"
     },
     "adapters": {
-      "description": "Cornerstone adapters"
+      "description": "Adapters"
     },
     "video": {
-      "description": "Cornerstone Video Viewport"
+      "description": "Video Viewport"
     },
     "nifti": {
       "description": "Nifti Volume loader"
@@ -34,6 +34,10 @@
       "stackAPI": {
         "name": "Stack Viewport API",
         "description": "Demonstrates how to interact with a Stack viewport (e.g. Set VOI Range, Next/Previous Images, Flip H/V, Rotate, Invert, Zoom/Pan, Reset)"
+      },
+      "stackPosition": {
+        "name": "Stack Viewport Positioning",
+        "description": "Demonstrates basic positioning of the viewport image using display area and flip/rotation"
       },
       "stackVoiSigmoid": {
         "name": "Stack Sigmoid LUT",
@@ -126,6 +130,10 @@
       "volumeSlabScroll": {
         "name": "Volume Slab Scroll",
         "description": "Demonstrates how to use the slab scroll tool to scroll through a volume"
+      },
+      "webWorker": {
+        "name": "Custom Web Worker Function",
+        "description": "Demonstrates how to use the web worker manager to register and execute custom web worker functions off the main thread"
       }
     },
     "tools-basic": {
@@ -216,6 +224,10 @@
       "advancedColorBar": {
         "name": "Advanced Colorbar",
         "description": "Demonstrates how to add an interactive colobar to stack and volume viewports with PT/CT volumes"
+      },
+      "livewireContour": {
+        "name": "Livewire",
+        "description": "Demonstrates how to use the livewire tool to create ROIs"
       }
     },
     "video" : {
@@ -223,9 +235,25 @@
         "name": "Video Display",
         "description": "Basic video display"
       },
+      "videoNavigation": {
+        "name": "Video Navigation",
+        "description": "Navigation of video playback"
+      },
+      "videoColor": {
+        "name": "Video Color Control",
+        "description": "Video Color Correction and Brightness/Contrast"
+      },
       "videoTools": {
         "name": "Video Tools",
-        "description": "Basic video tools/control"
+        "description": "Video annotation tools"
+      },
+      "videoGroup": {
+        "name": "Video Annotation Grouping",
+        "description": "Annotation grouping tools"
+      },
+      "videoRange": {
+        "name": "Video Range Selection",
+        "description": "Video range selection"
       }
     },
     "tools-segmentation" : {
@@ -269,6 +297,10 @@
         "name": "Segmentation Tools (Labelmap) - Brush, Scissors",
         "description": "Demonstrates how to use manual segmentation tools to modify the segmentation data"
       },
+      "labelmapSegmentationDynamicThreshold": {
+        "name": "Labelmap Segmentation Dynamic Threshold and Preview",
+        "description": "Demonstrates how to use dynamic threshold with prevview to modify the segmentation data"
+      },
       "labelmapSegmentLocking": {
         "name": "Labelmap Segmentation Swapping",
         "description": "Demonstrate how a segment can be locked such that it cannot be edited by segmentation tools"
@@ -280,6 +312,14 @@
       "rectangleROIThreshold": {
         "name": "Rectangle ROI Threshold Segmentation",
         "description": "Demonstrates how to use the rectangle roi tool to perform threshold segmentation"
+      },
+      "stackSegmentation": {
+        "name": "Segmentation Labelmap creation/edit for stack viewports",
+        "description": "Demonstrates how to create and edit a segmentation labelmap for stack viewports"
+      },
+      "splineROITools": {
+        "name": "Spline ROI Tools",
+        "description": "Demonstrates how to use spline ROI tools (Linear, Cardinal, Catmull-ROM and BSpline)"
       }
     },
     "tools-advanced": {
