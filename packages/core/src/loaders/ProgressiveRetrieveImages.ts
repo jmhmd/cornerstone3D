@@ -236,8 +236,11 @@ class ProgressiveRetrieveImagesInstance {
     }
     const { retrieveType = 'default' } = stage;
     const { retrieveOptions: keyedRetrieveOptions } = this;
-    const retrieveOptions =
+    let retrieveOptions =
       keyedRetrieveOptions[retrieveType] || keyedRetrieveOptions.default;
+    if (retrieveOptions) {
+      retrieveOptions = JSON.parse(JSON.stringify(retrieveOptions));
+    }
     const options = {
       ...baseOptions,
       retrieveType,
