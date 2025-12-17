@@ -256,6 +256,7 @@ class ProgressiveRetrieveImagesInstance {
           }
           this.outstandingRequests--;
           for (let skip = next; skip; skip = skip.next) {
+            console.log('skipping, data already complete: ', skip);
             this.updateStageStatus(skip.stage, null, true);
           }
         }
