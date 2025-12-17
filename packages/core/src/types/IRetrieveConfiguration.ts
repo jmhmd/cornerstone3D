@@ -64,6 +64,11 @@ export interface RetrieveStage {
    * This allows defining how replication within the volume occurs.
    */
   nearbyFrames?: NearbyFrames[];
+  /**
+   * If true, this stage will not automatically execute after the previous stage.
+   * Instead, it must be manually triggered via loadNextImageLoadStage(imageId).
+   */
+  manual?: boolean;
 }
 
 /**

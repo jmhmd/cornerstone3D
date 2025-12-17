@@ -26,6 +26,12 @@ export {
   singleRetrieveStages,
 };
 
+/**
+ * Global registry to track active ProgressiveRetrieveImagesInstance instances
+ * Maps imageId -> instance for manual stage triggering
+ */
+const activeInstances = new Map<string, ProgressiveRetrieveImagesInstance>();
+
 interface StageStatus {
   stageId: string;
   // startTime is the overall start of loading a given image id
@@ -125,7 +131,13 @@ export class ProgressiveRetrieveImages
       imageIds,
       listener
     );
-    return instance.loadImages();
+    // Register instance for manual stage triggering
+    imageIds.forEach((id) => activeInstances.set(id, instance));
+
+    return instance.loadImages().finally(() => {
+      // Cleanup: unregister instance when loading is complete
+      imageIds.forEach((id) => activeInstances.delete(id));
+    });
   }
 }
 
@@ -138,6 +150,11 @@ class ProgressiveRetrieveImagesInstance {
 
   stageStatusMap = new Map<string, StageStatus>();
   displayedIterator = new ProgressiveIterator<void | IImage>('displayed');
+  pendingManualRequests = new Map<
+    string,
+    // @ts-ignore
+    { request: ProgressiveRequest; streamingData: unknown }
+  >();
 
   constructor(configuration: IRetrieveConfiguration, imageIds, listener) {
     this.stages = configuration.stages;
@@ -159,6 +176,22 @@ class ProgressiveRetrieveImagesInstance {
     }
 
     return this.displayedIterator.getDonePromise();
+  }
+
+  /**
+   * Triggers the next manual stage for a given imageId
+   * @param imageId - The imageId to trigger the next stage for
+   * @returns true if a pending manual stage was found and triggered
+   */
+  public triggerNextManualStage(imageId: string): boolean {
+    const pending = this.pendingManualRequests.get(imageId);
+    if (!pending) {
+      return false;
+    }
+
+    this.pendingManualRequests.delete(imageId);
+    this.addRequest(pending.request, pending.streamingData);
+    return true;
   }
 
   protected sendRequest(request, options) {
@@ -207,7 +240,16 @@ class ProgressiveRetrieveImagesInstance {
           // After the update, the image can still be fetched in the old version
           // but a new request will be run and will replace the old version as
           // appropriate
-          this.addRequest(next, options.streamingData);
+
+          // Check if the next stage requires manual triggering
+          if (next.stage.manual) {
+            this.pendingManualRequests.set(imageId, {
+              request: next,
+              streamingData: options.streamingData,
+            });
+          } else {
+            this.addRequest(next, options.streamingData);
+          }
         } else {
           if (!complete) {
             this.listener.errorCallback(imageId, true, "Couldn't decode");
@@ -223,7 +265,7 @@ class ProgressiveRetrieveImagesInstance {
       });
     const doneLoad = uncompressedIterator.getDonePromise();
     // Errors already handled above in the callback
-    return doneLoad.catch((e) => null);
+    return doneLoad.catch((_e) => null);
   }
 
   /** Adds a request to the image load pool manager */
@@ -379,6 +421,38 @@ class ProgressiveRetrieveImagesInstance {
 
 export function createProgressive(configuration: IRetrieveConfiguration) {
   return new ProgressiveRetrieveImages(configuration);
+}
+
+/**
+ * Manually triggers the next stage of progressive loading for a given imageId.
+ * This is used when a stage is marked with `manual: true` in the retrieve configuration.
+ *
+ * @param imageId - The imageId to load the next stage for
+ * @returns true if a pending manual stage was found and triggered, false otherwise
+ *
+ * @example
+ * ```typescript
+ * // In your retrieve configuration:
+ * const config = {
+ *   stages: [
+ *     { id: 'initial', rangeIndex: 0 },
+ *     { id: 'full', rangeIndex: -1, manual: true }  // Requires manual trigger
+ *   ]
+ * };
+ *
+ * // Later, trigger the manual stage:
+ * if (loadNextImageLoadStage(imageId)) {
+ *   console.log('Loading next stage...');
+ * }
+ * ```
+ */
+export function loadNextImageLoadStage(imageId: string): boolean {
+  const instance = activeInstances.get(imageId);
+  if (!instance) {
+    return false;
+  }
+
+  return instance.triggerNextManualStage(imageId);
 }
 
 export default ProgressiveRetrieveImages;
