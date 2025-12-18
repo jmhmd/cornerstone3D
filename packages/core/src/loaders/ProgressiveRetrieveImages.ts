@@ -135,8 +135,17 @@ export class ProgressiveRetrieveImages
     imageIds.forEach((id) => activeInstances.set(id, instance));
 
     return instance.loadImages().finally(() => {
-      // Cleanup: unregister instance when loading is complete
-      imageIds.forEach((id) => activeInstances.delete(id));
+      // Remove event listener to prevent memory leak from the listener itself
+      eventTarget.removeEventListener(
+        Events.IMAGE_CACHE_IMAGE_REMOVED,
+        instance.boundCleanupHandler
+      );
+
+      // Clean up all tracked state
+      imageIds.forEach((id) => {
+        instance.pendingManualRequests.delete(id);
+        activeInstances.delete(id);
+      });
     });
   }
 }
@@ -155,12 +164,20 @@ class ProgressiveRetrieveImagesInstance {
     // @ts-ignore
     { request: ProgressiveRequest; streamingData: unknown }
   >();
+  boundCleanupHandler: (evt: EventTypes.ImageCacheImageRemovedEvent) => void;
 
   constructor(configuration: IRetrieveConfiguration, imageIds, listener) {
     this.stages = configuration.stages;
     this.retrieveOptions = configuration.retrieveOptions;
     this.imageIds = imageIds;
     this.listener = listener;
+
+    // Bind event handler for cache purge events
+    this.boundCleanupHandler = this.handleImageRemoved.bind(this);
+    eventTarget.addEventListener(
+      Events.IMAGE_CACHE_IMAGE_REMOVED,
+      this.boundCleanupHandler
+    );
   }
 
   public async loadImages() {
@@ -192,6 +209,20 @@ class ProgressiveRetrieveImagesInstance {
     this.pendingManualRequests.delete(imageId);
     this.addRequest(pending.request, pending.streamingData);
     return true;
+  }
+
+  /**
+   * Handles IMAGE_CACHE_IMAGE_REMOVED events to clean up tracking when images are purged
+   * @param evt - The cache image removed event
+   */
+  private handleImageRemoved(evt: EventTypes.ImageCacheImageRemovedEvent) {
+    const { imageId } = evt.detail;
+
+    // If this is one of our images, clean up tracking
+    if (this.imageIds.includes(imageId)) {
+      this.pendingManualRequests.delete(imageId);
+      activeInstances.delete(imageId);
+    }
   }
 
   protected sendRequest(request, options) {
