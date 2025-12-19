@@ -134,19 +134,7 @@ export class ProgressiveRetrieveImages
     // Register instance for manual stage triggering
     imageIds.forEach((id) => activeInstances.set(id, instance));
 
-    return instance.loadImages().finally(() => {
-      // Remove event listener to prevent memory leak from the listener itself
-      eventTarget.removeEventListener(
-        Events.IMAGE_CACHE_IMAGE_REMOVED,
-        instance.boundCleanupHandler
-      );
-
-      // Clean up all tracked state
-      imageIds.forEach((id) => {
-        instance.pendingManualRequests.delete(id);
-        activeInstances.delete(id);
-      });
-    });
+    return instance.loadImages();
   }
 }
 
@@ -207,6 +195,8 @@ class ProgressiveRetrieveImagesInstance {
     }
 
     this.pendingManualRequests.delete(imageId);
+    // Increment outstanding requests since we're starting a new manual request
+    this.outstandingRequests++;
     this.addRequest(pending.request, pending.streamingData);
     return true;
   }
@@ -223,6 +213,23 @@ class ProgressiveRetrieveImagesInstance {
       this.pendingManualRequests.delete(imageId);
       activeInstances.delete(imageId);
     }
+  }
+
+  /**
+   * Cleans up all resources associated with this instance
+   */
+  public cleanup() {
+    // Remove event listener to prevent memory leak
+    eventTarget.removeEventListener(
+      Events.IMAGE_CACHE_IMAGE_REMOVED,
+      this.boundCleanupHandler
+    );
+
+    // Clean up all tracked state
+    this.imageIds.forEach((id) => {
+      this.pendingManualRequests.delete(id);
+      activeInstances.delete(id);
+    });
   }
 
   protected sendRequest(request, options) {
@@ -278,6 +285,9 @@ class ProgressiveRetrieveImagesInstance {
               request: next,
               streamingData: options.streamingData,
             });
+            // Manual stages are user-triggered, so decrement outstanding requests
+            // to allow the initial load promise to resolve
+            this.outstandingRequests--;
           } else {
             this.addRequest(next, options.streamingData);
           }
@@ -293,6 +303,10 @@ class ProgressiveRetrieveImagesInstance {
         }
         if (this.outstandingRequests <= 0) {
           this.displayedIterator.resolve();
+          // Clean up if no pending manual stages remain
+          if (this.pendingManualRequests.size === 0) {
+            this.cleanup();
+          }
         }
       });
     const doneLoad = uncompressedIterator.getDonePromise();
