@@ -2228,6 +2228,15 @@ class StackViewport extends Viewport {
     return options;
   }
 
+  /**
+   * Gets the images loader instance used by this viewport.
+   * This is either a ProgressiveRetrieveImages instance (if configured)
+   * or the viewport itself (fallback).
+   */
+  public getImagesLoader(): IImagesLoader {
+    return this.imagesLoader;
+  }
+
   public async loadImages(
     imageIds: string[],
     listener: ImageLoadListener
