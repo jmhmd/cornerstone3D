@@ -126,13 +126,43 @@ export class ProgressiveRetrieveImages
   }
 
   public loadImages(imageIds: string[], listener: ImageLoadListener) {
+    // Check each imageId for existing instances with pending manual stages
+    // This prevents orphaning pending manual stages when scrolling back
+    const imageIdsNeedingLoad: string[] = [];
+
+    for (const imageId of imageIds) {
+      const existingInstance = activeInstances.get(imageId);
+
+      if (
+        existingInstance &&
+        existingInstance.pendingManualRequests.has(imageId)
+      ) {
+        // Existing instance has pending manual stage for this image - reuse it
+        // Display cached image immediately via the new listener
+        const cachedImage = cache.getImage(imageId);
+        if (cachedImage) {
+          listener.successCallback(imageId, cachedImage);
+        }
+        // Skip this imageId - don't create new instance for it
+      } else {
+        // No existing instance with pending manual stages - needs loading
+        imageIdsNeedingLoad.push(imageId);
+      }
+    }
+
+    // If no images need loading, we're done
+    if (imageIdsNeedingLoad.length === 0) {
+      return Promise.resolve(null);
+    }
+
+    // Create new instance only for images that need loading
     const instance = new ProgressiveRetrieveImagesInstance(
       this,
-      imageIds,
+      imageIdsNeedingLoad,
       listener
     );
     // Register instance for manual stage triggering
-    imageIds.forEach((id) => activeInstances.set(id, instance));
+    imageIdsNeedingLoad.forEach((id) => activeInstances.set(id, instance));
 
     return instance.loadImages();
   }
@@ -181,9 +211,10 @@ class ProgressiveRetrieveImagesInstance {
       }
     }
 
-    // If all images were cached, no need to create requests
+    // If all images were cached, we've already displayed them via successCallback
+    // Don't cleanup - this instance might be needed for manual stage triggering
+    // Cleanup will happen naturally when manual stages complete or image is purged
     if (allCached) {
-      this.cleanup();
       return Promise.resolve(null);
     }
 
