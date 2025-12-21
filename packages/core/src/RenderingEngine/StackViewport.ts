@@ -2745,7 +2745,8 @@ class StackViewport extends Viewport {
 
     const targetImageId = imageIds[newTargetImageIdIndex];
 
-    const imageAlreadyLoaded = cache.isLoaded(targetImageId);
+    const cachedImage = cache.getImage(targetImageId);
+    const imageAlreadyLoaded = !!cachedImage;
 
     // If image is already cached we want to scroll right away; however, if it is
     // not cached, we can debounce the scroll event to avoid firing multiple scroll

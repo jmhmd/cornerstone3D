@@ -169,6 +169,24 @@ class ProgressiveRetrieveImagesInstance {
   }
 
   public async loadImages() {
+    // Check if all requested images are already cached (including partial images)
+    // If so, return them immediately without creating new fetch requests
+    let allCached = true;
+    for (const imageId of this.imageIds) {
+      const cachedImage = cache.getImage(imageId);
+      if (cachedImage) {
+        this.listener.successCallback(imageId, cachedImage);
+      } else {
+        allCached = false;
+      }
+    }
+
+    // If all images were cached, no need to create requests
+    if (allCached) {
+      this.cleanup();
+      return Promise.resolve(null);
+    }
+
     // The actual function is to just setup the interleave and add the
     // requests, with all the actual work being handled by the nested functions
     const interleaved = this.createStageRequests();
